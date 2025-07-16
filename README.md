@@ -1,6 +1,6 @@
 # Floor
 
-Floor is a fully decentralised gaming smart contract that enables provably fair games using any ERC20 token or ETH. The contract relies on resolvers—independent addresses that hold liquidity and sign game actions—to determine the outcome of each game. There is no contract owner and anyone can act as a resolver.
+**Floor** is a smart contract that enables provably fair games using any ERC20 token or ETH. The contract relies on resolvers with liquidity that sign game actions such as creating games or resolving the outcome. There is no contract owner and anyone can act as a resolver, A.K.A. *the house*.
 
 ## Features
 
@@ -13,19 +13,19 @@ Floor is a fully decentralised gaming smart contract that enables provably fair 
 
 This repository uses [Foundry](https://book.getfoundry.sh) for development. After cloning the repo, install dependencies and run the tests:
 
-```bash
-forge test -vvv
+```shell
+forge test
 ```
 
 ### Building
 
-```bash
+```shell
 forge build
 ```
 
 ### Formatting
 
-```bash
+```shell
 forge fmt
 ```
 
