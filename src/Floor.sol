@@ -22,10 +22,10 @@ import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 contract Floor is ReentrancyGuard, EIP712 {
     using SafeERC20 for IERC20;
 
-    // ♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣
-    //                      CONSTANTS
-    // ♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣
-
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                         CONSTANTS                          */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+    
     /// @notice Address representing ETH (0x0)
     address public constant ETH_ADDRESS = address(0);
 
@@ -40,9 +40,9 @@ contract Floor is ReentrancyGuard, EIP712 {
     bytes32 public constant MARK_GAME_AS_LOST_TYPEHASH =
         keccak256("MarkGameAsLost(uint256 id,bytes32 gameState,string gameSeed,uint256 deadline)");
 
-    // ♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣
-    //                   STATE VARIABLES
-    // ♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                      STATE VARIABLES                       */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @notice Counter for generating unique game IDs
     uint256 public count;
@@ -79,9 +79,9 @@ contract Floor is ReentrancyGuard, EIP712 {
     /// @notice Mapping from on-chain game ID to Game data
     mapping(uint256 id => Game game) public games;
 
-    // ♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣
-    //                        EVENTS
-    // ♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                           EVENTS                           */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @notice Emitted when a new game is created
     event GameCreated(
@@ -108,9 +108,9 @@ contract Floor is ReentrancyGuard, EIP712 {
     /// @notice Emitted when a resolver withdraws funds
     event Withdraw(address indexed resolver, address indexed token, uint256 amount);
 
-    // ♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣
-    //                        ERRORS
-    // ♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                           ERRORS                           */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     error NonceAlreadyUsed(uint256 nonce);
     error GameDoesNotExist(uint256 id);
@@ -122,9 +122,9 @@ contract Floor is ReentrancyGuard, EIP712 {
     error InvalidAmount(uint256 amount);
     error InvalidAsset();
 
-    // ♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣
-    //                     CONSTRUCTOR
-    // ♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                        CONSTRUCTOR                         */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /**
      * @dev Constructor sets initial configuration
@@ -133,9 +133,9 @@ contract Floor is ReentrancyGuard, EIP712 {
         // EIP712 handles domain separation automatically
     }
 
-    // ♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣
-    //                  EXTERNAL FUNCTIONS
-    // ♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                     EXTERNAL FUNCTIONS                     */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /**
      * @notice Creates a new game. Supports both ETH and ERC20 tokens.
@@ -161,18 +161,19 @@ contract Floor is ReentrancyGuard, EIP712 {
         require(block.timestamp <= deadline, "Signature expired");
         require(betAmount > 0, "Bet amount must be positive");
 
-        // Verify resolver signature and get resolver address
-        bytes32 structHash = keccak256(
-            abi.encode(
-                CREATE_GAME_TYPEHASH, nonce, token, betAmount, gameSeedHash, algorithm, gameConfig, msg.sender, deadline
-            )
-        );
-        bytes32 messageHash = _hashTypedDataV4(structHash);
-        address resolver = _verifyAndGetResolver(messageHash, serverSignature);
-
         if (usedNonces[nonce]) {
             revert NonceAlreadyUsed(nonce);
         }
+
+        // Verify resolver signature and get resolver address
+        address resolver = _verifyAndGetResolver(
+            _hashTypedDataV4(keccak256(
+                abi.encode(
+                    CREATE_GAME_TYPEHASH, nonce, token, betAmount, gameSeedHash, algorithm, gameConfig, msg.sender, deadline
+                )
+            )),
+            serverSignature
+        );
 
         // Handle asset transfer - goes to total pool
         if (token == ETH_ADDRESS) {
@@ -231,24 +232,18 @@ contract Floor is ReentrancyGuard, EIP712 {
         }
         require(payoutAmount > 0, "Payout must be positive");
 
-        address playerAddress = game.player;
-        address token = game.token;
-        address resolver = game.resolver;
-
         // Verify authorization - resolver can resolve directly, others need resolver signature
-        if (msg.sender != resolver) {
+        if (msg.sender != game.resolver) {
             require(block.timestamp <= deadline, "Signature expired");
-            bytes32 structHash = keccak256(
+            bytes32 messageHash = _hashTypedDataV4(keccak256(
                 abi.encode(CASH_OUT_TYPEHASH, id, payoutAmount, gameState, keccak256(bytes(gameSeed)), deadline)
-            );
-            bytes32 messageHash = _hashTypedDataV4(structHash);
-            address signingResolver = _verifyAndGetResolver(messageHash, serverSignature);
-            require(signingResolver == resolver, "Only game resolver can resolve");
+            ));
+            require(_verifyAndGetResolver(messageHash, serverSignature) == game.resolver, "Only game resolver can resolve");
         }
 
         // Check resolver has sufficient balance
-        if (balanceOf[resolver][token] < payoutAmount) {
-            revert InsufficientContractBalance(token, payoutAmount, balanceOf[resolver][token]);
+        if (balanceOf[game.resolver][game.token] < payoutAmount) {
+            revert InsufficientContractBalance(game.token, payoutAmount, balanceOf[game.resolver][game.token]);
         }
 
         // Update game state
@@ -258,20 +253,20 @@ contract Floor is ReentrancyGuard, EIP712 {
         game.gameSeed = gameSeed;
 
         // Update balances - deduct from resolver, add bet amount to resolver (house edge)
-        balanceOf[resolver][token] -= payoutAmount;
-        balanceOf[resolver][token] += game.betAmount;
+        balanceOf[game.resolver][game.token] -= payoutAmount;
+        balanceOf[game.resolver][game.token] += game.betAmount;
 
         // Transfer payout to player
-        if (token == ETH_ADDRESS) {
-            (bool success,) = payable(playerAddress).call{value: payoutAmount}("");
+        if (game.token == ETH_ADDRESS) {
+            (bool success,) = payable(game.player).call{value: payoutAmount}("");
             if (!success) {
-                revert PayoutFailed(id, token, payoutAmount);
+                revert PayoutFailed(id, game.token, payoutAmount);
             }
         } else {
-            IERC20(token).safeTransfer(playerAddress, payoutAmount);
+            IERC20(game.token).safeTransfer(game.player, payoutAmount);
         }
 
-        emit PayoutSent(id, resolver, token, payoutAmount, playerAddress);
+        emit PayoutSent(id, game.resolver, game.token, payoutAmount, game.player);
     }
 
     /**
@@ -297,16 +292,13 @@ contract Floor is ReentrancyGuard, EIP712 {
             revert GameNotActive(id);
         }
 
-        address gameResolver = game.resolver;
-
         // Verify authorization - resolver can resolve directly, others need resolver signature
-        if (msg.sender != gameResolver) {
+        if (msg.sender != game.resolver) {
             require(block.timestamp <= deadline, "Signature expired");
-            bytes32 structHash =
-                keccak256(abi.encode(MARK_GAME_AS_LOST_TYPEHASH, id, gameState, keccak256(bytes(gameSeed)), deadline));
-            bytes32 messageHash = _hashTypedDataV4(structHash);
-            address signingResolver = _verifyAndGetResolver(messageHash, serverSignature);
-            require(signingResolver == gameResolver, "Only game resolver can resolve");
+            bytes32 messageHash = _hashTypedDataV4(
+                keccak256(abi.encode(MARK_GAME_AS_LOST_TYPEHASH, id, gameState, keccak256(bytes(gameSeed)), deadline))
+            );
+            require(_verifyAndGetResolver(messageHash, serverSignature) == game.resolver, "Only game resolver can resolve");
         }
 
         // Update game state
@@ -315,14 +307,14 @@ contract Floor is ReentrancyGuard, EIP712 {
         game.gameSeed = gameSeed;
 
         // Add bet amount to resolver's balance (house keeps the bet)
-        balanceOf[gameResolver][game.token] += game.betAmount;
+        balanceOf[game.resolver][game.token] += game.betAmount;
 
-        emit GameLost(id, gameResolver);
+        emit GameLost(id, game.resolver);
     }
 
-    // ♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣
-    //                 RESOLVER MANAGEMENT
-    // ♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                    RESOLVER MANAGEMENT                     */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /**
      * @notice Deposit ETH as a resolver to provide liquidity for games
@@ -378,9 +370,9 @@ contract Floor is ReentrancyGuard, EIP712 {
         emit Withdraw(msg.sender, token, amount);
     }
 
-    // ♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣
-    //                   RECEIVE FUNCTION
-    // ♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                      RECEIVE FUNCTION                      */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /**
      * @notice Receive function to accept direct ETH deposits (credited to sender as resolver)
@@ -390,9 +382,9 @@ contract Floor is ReentrancyGuard, EIP712 {
         emit Deposit(msg.sender, ETH_ADDRESS, msg.value);
     }
 
-    // ♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣
-    //                  INTERNAL FUNCTIONS
-    // ♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣♠♥♦♣
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                     INTERNAL FUNCTION                      */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /**
      * @dev Verifies signature and returns the resolver address
