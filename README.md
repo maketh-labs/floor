@@ -1,66 +1,50 @@
-## Foundry
+# Floor
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+**Floor** is a smart contract that enables provably fair games using any ERC20 token or ETH. The contract relies on resolvers with liquidity that sign game actions such as creating games or resolving the outcome. There is no contract owner and anyone can act as a resolver, A.K.A. *the house*.
 
-Foundry consists of:
+## Features
 
--   **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
--   **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
--   **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
--   **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+- **Multi-asset support**: games may be played with ETH or any ERC20 token.
+- **Provable fairness**: games store a hash of the initial seed, configuration and algorithm. When the resolver publishes the final seed, players can verify the outcome off chain.
+- **Permit2 integration**: optional gasless approvals for ERC20 tokens.
+- **Open resolver system**: deposits and withdrawals are permissionless.
 
-## Documentation
+## Getting started
 
-https://book.getfoundry.sh/
-
-## Usage
-
-### Build
+This repository uses [Foundry](https://book.getfoundry.sh) for development. After cloning the repo, install dependencies and run the tests:
 
 ```shell
-$ forge build
+forge test
 ```
 
-### Test
+### Building
 
 ```shell
-$ forge test
+forge build
 ```
 
-### Format
+### Formatting
 
 ```shell
-$ forge fmt
+forge fmt
 ```
 
-### Gas Snapshots
+## Basic usage
 
-```shell
-$ forge snapshot
-```
+1. **Provide liquidity**
+   - Call `depositETH()` to deposit Ether or `deposit(token, amount)` to deposit ERC20 tokens. Deposits are credited to the caller as a resolver.
+2. **Create a game**
+   - Players call `createGame` (or `createGameWithPermit2` for Permit2) with parameters signed by a resolver. ETH bets are sent as `msg.value`. ERC20 bets are transferred from the player.
+3. **Resolve the game**
+   - The resolver determines the outcome and calls `cashOut` or `markGameAsLost` with a signature if necessary. The contract transfers winnings to the player and accounts for the resolver’s balance.
+4. **Withdraw liquidity**
+   - Resolvers may call `withdrawETH` or `withdraw` at any time to retrieve unused funds.
 
-### Anvil
+## Contracts
 
-```shell
-$ anvil
-```
+The primary contract is [`src/Floor.sol`](src/Floor.sol). Unit tests are located in [`test/Floor.t.sol`](test/Floor.t.sol).
 
-### Deploy
+## Deployment
 
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
+A minimal deployment script is provided in [`script/Abstract.Deploy.sol`](script/Abstract.Deploy.sol). Custom scripts can inherit from it to deploy `Floor` with the desired Permit2 address.
 
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```
