@@ -200,17 +200,18 @@ contract Floor is ReentrancyGuard, EIP712 {
      * @param params Game creation parameters grouped in a struct
      * @param serverSignature Signature from the server authorizing this game creation
      * @param permit Permit2 permit data signed by the player
+     * @param transferDetails Details of the token transfer (to, requestedAmount)
      * @param permitSignature Player's signature for the Permit2 transfer
      */
     function createGameWithPermit2(
         CreateGameParams calldata params,
         bytes calldata serverSignature,
         ISignatureTransfer.PermitTransferFrom memory permit,
+        ISignatureTransfer.SignatureTransferDetails calldata transferDetails,
         bytes calldata permitSignature
     ) external nonReentrant {
         if (block.timestamp > params.deadline) revert SignatureExpired();
         if (params.betAmount == 0) revert InvalidAmount(params.betAmount);
-        if (params.token == ETH_ADDRESS) revert InvalidAsset();
 
         if (usedNonces[params.nonce]) {
             revert NonceAlreadyUsed(params.nonce);
@@ -219,17 +220,18 @@ contract Floor is ReentrancyGuard, EIP712 {
         // Verify resolver signature
         address resolver = _verifyCreateGameSignature(params, msg.sender, serverSignature);
 
-        // Verify permit token and amount match
+        // Verify permit token matches params
         if (permit.permitted.token != params.token) revert TokenMismatch();
+
+        // Verify permit amount is sufficient
         if (permit.permitted.amount < params.betAmount) revert InsufficientPermitAmount();
 
+        // Verify transfer details are safe
+        if (transferDetails.to != address(this)) revert InvalidPermitTransfer();
+        if (transferDetails.requestedAmount != params.betAmount) revert InvalidAmount(transferDetails.requestedAmount);
+
         // Transfer tokens using Permit2
-        PERMIT2.permitTransferFrom(
-            permit,
-            ISignatureTransfer.SignatureTransferDetails({to: address(this), requestedAmount: params.betAmount}),
-            msg.sender,
-            permitSignature
-        );
+        PERMIT2.permitTransferFrom(permit, transferDetails, msg.sender, permitSignature);
 
         _createGame(params, resolver, msg.sender);
     }
