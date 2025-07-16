@@ -433,29 +433,7 @@ contract Floor is ReentrancyGuard, EIP712 {
         return recoveredSigner;
     }
 
-    /**
-     * @notice Internal function to verify resolver signature using Ethereum Signed Message format
-     * @param signer The address that should have signed the message
-     * @param messageHash The hash of the message to verify
-     * @param signature The signature to verify
-     */
-    function _verifySignature(address signer, bytes32 messageHash, bytes calldata signature) internal pure {
-        bytes32 signedHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash));
 
-        // Extract signature components
-        if (signature.length != 65) revert InvalidSignature();
-        bytes32 r;
-        bytes32 s;
-        uint8 v;
-        assembly {
-            r := calldataload(signature.offset)
-            s := calldataload(add(signature.offset, 32))
-            v := byte(0, calldataload(add(signature.offset, 64)))
-        }
-
-        // Verify signature is from signer
-        if (ecrecover(signedHash, v, r, s) != signer) revert InvalidSignature();
-    }
 
     /**
      * @dev Verifies the signature of a game creation request and returns the resolver address.
