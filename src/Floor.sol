@@ -134,16 +134,13 @@ contract Floor is ReentrancyGuard, EIP712 {
     error NonceAlreadyUsed(uint256 nonce);
     error GameDoesNotExist(uint256 id);
     error GameNotActive(uint256 id);
-    error PayoutFailed(uint256 id, address token, uint256 amount);
     error InvalidResolverSignature();
-    error UnsupportedAsset(address token);
     error InsufficientContractBalance(address token, uint256 required, uint256 available);
     error InvalidAmount(uint256 amount);
     error InvalidAsset();
     error InvalidPermitTransfer();
     error SignatureExpired();
     error InvalidSignature();
-    error InvalidResolver();
     error TokenMismatch();
     error InsufficientPermitAmount();
     error ETHTransferFailed();
