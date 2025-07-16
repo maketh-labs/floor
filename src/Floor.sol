@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.30;
 
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import {ISignatureTransfer} from "permit2/src/interfaces/ISignatureTransfer.sol";
 
 /**
  * @title Floor
@@ -17,7 +18,7 @@ import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
  * - IPFS algorithm storage for immutable verification
  * - Open resolver system (anyone can be a resolver with their own liquidity)
  * - Fully decentralized (no owner or admin)
- * - Prepared for Permit2 integration
+ * - Permit2 integration for gasless ERC20 approvals
  */
 contract Floor is ReentrancyGuard, EIP712 {
     using SafeERC20 for IERC20;
@@ -25,9 +26,12 @@ contract Floor is ReentrancyGuard, EIP712 {
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         CONSTANTS                          */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
-    
+
     /// @notice Address representing ETH (0x0)
     address public constant ETH_ADDRESS = address(0);
+
+    /// @notice Permit2 contract address
+    ISignatureTransfer public immutable PERMIT2;
 
     /// @notice EIP-712 type hashes
     bytes32 public constant CREATE_GAME_TYPEHASH = keccak256(
@@ -39,6 +43,21 @@ contract Floor is ReentrancyGuard, EIP712 {
 
     bytes32 public constant MARK_GAME_AS_LOST_TYPEHASH =
         keccak256("MarkGameAsLost(uint256 id,bytes32 gameState,string gameSeed,uint256 deadline)");
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                           STRUCTS                          */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    /// @notice Struct to group game creation parameters
+    struct CreateGameParams {
+        uint256 nonce;
+        address token;
+        uint256 betAmount;
+        bytes32 gameSeedHash;
+        bytes32 algorithm;
+        bytes32 gameConfig;
+        uint256 deadline;
+    }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                      STATE VARIABLES                       */
@@ -121,6 +140,13 @@ contract Floor is ReentrancyGuard, EIP712 {
     error InsufficientContractBalance(address token, uint256 required, uint256 available);
     error InvalidAmount(uint256 amount);
     error InvalidAsset();
+    error InvalidPermitTransfer();
+    error SignatureExpired();
+    error InvalidSignature();
+    error InvalidResolver();
+    error TokenMismatch();
+    error InsufficientPermitAmount();
+    error ETHTransferFailed();
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                        CONSTRUCTOR                         */
@@ -128,9 +154,10 @@ contract Floor is ReentrancyGuard, EIP712 {
 
     /**
      * @dev Constructor sets initial configuration
+     * @param permit2 Address of the Permit2 contract
      */
-    constructor() EIP712("Floor", "1") {
-        // EIP712 handles domain separation automatically
+    constructor(address permit2) EIP712("Floor", "1") {
+        PERMIT2 = ISignatureTransfer(permit2);
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -139,71 +166,72 @@ contract Floor is ReentrancyGuard, EIP712 {
 
     /**
      * @notice Creates a new game. Supports both ETH and ERC20 tokens.
-     * @param nonce Unique nonce to prevent signature replay attacks
-     * @param token Token address (ETH_ADDRESS for ETH, token address for ERC20)
-     * @param betAmount Amount to bet (in wei for ETH, token units for ERC20)
-     * @param gameSeedHash Hash of the game seed for provable fairness
-     * @param algorithm IPFS CID (as bytes32) pointing to the deterministic algorithm
-     * @param gameConfig CID of game configuration JSON
-     * @param deadline The latest timestamp this signature is valid for
+     * @param params Game creation parameters grouped in a struct
      * @param serverSignature Signature from the server authorizing this game creation
      */
-    function createGame(
-        uint256 nonce,
-        address token,
-        uint256 betAmount,
-        bytes32 gameSeedHash,
-        bytes32 algorithm,
-        bytes32 gameConfig,
-        uint256 deadline,
-        bytes calldata serverSignature
-    ) external payable nonReentrant {
-        require(block.timestamp <= deadline, "Signature expired");
-        require(betAmount > 0, "Bet amount must be positive");
+    function createGame(CreateGameParams calldata params, bytes calldata serverSignature)
+        external
+        payable
+        nonReentrant
+    {
+        if (block.timestamp > params.deadline) revert SignatureExpired();
+        if (params.betAmount == 0) revert InvalidAmount(params.betAmount);
 
-        if (usedNonces[nonce]) {
-            revert NonceAlreadyUsed(nonce);
+        if (usedNonces[params.nonce]) {
+            revert NonceAlreadyUsed(params.nonce);
         }
 
-        // Verify resolver signature and get resolver address
-        address resolver = _verifyAndGetResolver(
-            _hashTypedDataV4(keccak256(
-                abi.encode(
-                    CREATE_GAME_TYPEHASH, nonce, token, betAmount, gameSeedHash, algorithm, gameConfig, msg.sender, deadline
-                )
-            )),
-            serverSignature
+        // Verify resolver signature
+        address resolver = _verifyCreateGameSignature(params, msg.sender, serverSignature);
+
+        // Handle asset transfer
+        if (params.token == ETH_ADDRESS) {
+            if (msg.value != params.betAmount) revert InvalidAmount(params.betAmount);
+        } else {
+            if (msg.value != 0) revert InvalidAmount(msg.value);
+            IERC20(params.token).safeTransferFrom(msg.sender, address(this), params.betAmount);
+        }
+
+        _createGame(params, resolver, msg.sender);
+    }
+
+    /**
+     * @notice Creates a new game using Permit2 for gasless ERC20 approvals
+     * @param params Game creation parameters grouped in a struct
+     * @param serverSignature Signature from the server authorizing this game creation
+     * @param permit Permit2 permit data signed by the player
+     * @param permitSignature Player's signature for the Permit2 transfer
+     */
+    function createGameWithPermit2(
+        CreateGameParams calldata params,
+        bytes calldata serverSignature,
+        ISignatureTransfer.PermitTransferFrom memory permit,
+        bytes calldata permitSignature
+    ) external nonReentrant {
+        if (block.timestamp > params.deadline) revert SignatureExpired();
+        if (params.betAmount == 0) revert InvalidAmount(params.betAmount);
+        if (params.token == ETH_ADDRESS) revert InvalidAsset();
+
+        if (usedNonces[params.nonce]) {
+            revert NonceAlreadyUsed(params.nonce);
+        }
+
+        // Verify resolver signature
+        address resolver = _verifyCreateGameSignature(params, msg.sender, serverSignature);
+
+        // Verify permit token and amount match
+        if (permit.permitted.token != params.token) revert TokenMismatch();
+        if (permit.permitted.amount < params.betAmount) revert InsufficientPermitAmount();
+
+        // Transfer tokens using Permit2
+        PERMIT2.permitTransferFrom(
+            permit,
+            ISignatureTransfer.SignatureTransferDetails({to: address(this), requestedAmount: params.betAmount}),
+            msg.sender,
+            permitSignature
         );
 
-        // Handle asset transfer - goes to total pool
-        if (token == ETH_ADDRESS) {
-            require(msg.value == betAmount, "ETH amount mismatch");
-        } else {
-            require(msg.value == 0, "No ETH should be sent for token games");
-            IERC20(token).safeTransferFrom(msg.sender, address(this), betAmount);
-        }
-
-        // Mark nonce as used
-        usedNonces[nonce] = true;
-
-        // Create game
-        count += 1;
-
-        games[count] = Game({
-            player: msg.sender,
-            resolver: resolver,
-            token: token,
-            betAmount: betAmount,
-            gameSeedHash: gameSeedHash,
-            status: GameStatus.Active,
-            payoutAmount: 0,
-            gameSeed: "",
-            algorithm: algorithm,
-            gameConfig: gameConfig,
-            gameState: "",
-            createdAt: block.timestamp
-        });
-        emit GameCreated(nonce, count, msg.sender, resolver, token, betAmount, gameSeedHash);
+        _createGame(params, resolver, msg.sender);
     }
 
     /**
@@ -230,15 +258,17 @@ contract Floor is ReentrancyGuard, EIP712 {
         if (game.status != GameStatus.Active) {
             revert GameNotActive(id);
         }
-        require(payoutAmount > 0, "Payout must be positive");
+        if (payoutAmount == 0) revert InvalidAmount(payoutAmount);
 
         // Verify authorization - resolver can resolve directly, others need resolver signature
         if (msg.sender != game.resolver) {
-            require(block.timestamp <= deadline, "Signature expired");
-            bytes32 messageHash = _hashTypedDataV4(keccak256(
-                abi.encode(CASH_OUT_TYPEHASH, id, payoutAmount, gameState, keccak256(bytes(gameSeed)), deadline)
-            ));
-            require(_verifyAndGetResolver(messageHash, serverSignature) == game.resolver, "Only game resolver can resolve");
+            if (block.timestamp > deadline) revert SignatureExpired();
+            bytes32 messageHash = _hashTypedDataV4(
+                keccak256(
+                    abi.encode(CASH_OUT_TYPEHASH, id, payoutAmount, gameState, keccak256(bytes(gameSeed)), deadline)
+                )
+            );
+            if (_verifyAndGetResolver(messageHash, serverSignature) != game.resolver) revert InvalidResolverSignature();
         }
 
         // Check resolver has sufficient balance
@@ -260,7 +290,7 @@ contract Floor is ReentrancyGuard, EIP712 {
         if (game.token == ETH_ADDRESS) {
             (bool success,) = payable(game.player).call{value: payoutAmount}("");
             if (!success) {
-                revert PayoutFailed(id, game.token, payoutAmount);
+                revert ETHTransferFailed();
             }
         } else {
             IERC20(game.token).safeTransfer(game.player, payoutAmount);
@@ -294,11 +324,11 @@ contract Floor is ReentrancyGuard, EIP712 {
 
         // Verify authorization - resolver can resolve directly, others need resolver signature
         if (msg.sender != game.resolver) {
-            require(block.timestamp <= deadline, "Signature expired");
+            if (block.timestamp > deadline) revert SignatureExpired();
             bytes32 messageHash = _hashTypedDataV4(
                 keccak256(abi.encode(MARK_GAME_AS_LOST_TYPEHASH, id, gameState, keccak256(bytes(gameSeed)), deadline))
             );
-            require(_verifyAndGetResolver(messageHash, serverSignature) == game.resolver, "Only game resolver can resolve");
+            if (_verifyAndGetResolver(messageHash, serverSignature) != game.resolver) revert InvalidResolverSignature();
         }
 
         // Update game state
@@ -320,7 +350,7 @@ contract Floor is ReentrancyGuard, EIP712 {
      * @notice Deposit ETH as a resolver to provide liquidity for games
      */
     function depositETH() external payable {
-        require(msg.value > 0, "Must send ETH");
+        if (msg.value == 0) revert InvalidAmount(msg.value);
         balanceOf[msg.sender][ETH_ADDRESS] += msg.value;
         emit Deposit(msg.sender, ETH_ADDRESS, msg.value);
     }
@@ -331,8 +361,8 @@ contract Floor is ReentrancyGuard, EIP712 {
      * @param amount Amount to deposit
      */
     function deposit(address token, uint256 amount) external {
-        require(token != ETH_ADDRESS, "Use depositETH for ETH");
-        require(amount > 0, "Amount must be positive");
+        if (token == ETH_ADDRESS) revert InvalidAsset();
+        if (amount == 0) revert InvalidAmount(amount);
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
         balanceOf[msg.sender][token] += amount;
         emit Deposit(msg.sender, token, amount);
@@ -343,13 +373,15 @@ contract Floor is ReentrancyGuard, EIP712 {
      * @param amount The amount to withdraw
      */
     function withdrawETH(uint256 amount) external nonReentrant {
-        require(amount > 0, "Amount must be positive");
-        require(amount <= balanceOf[msg.sender][ETH_ADDRESS], "Insufficient balance");
+        if (amount == 0) revert InvalidAmount(amount);
+        if (amount > balanceOf[msg.sender][ETH_ADDRESS]) {
+            revert InsufficientContractBalance(ETH_ADDRESS, amount, balanceOf[msg.sender][ETH_ADDRESS]);
+        }
 
         balanceOf[msg.sender][ETH_ADDRESS] -= amount;
-        
+
         (bool success,) = payable(msg.sender).call{value: amount}("");
-        require(success, "ETH withdrawal failed");
+        if (!success) revert ETHTransferFailed();
 
         emit Withdraw(msg.sender, ETH_ADDRESS, amount);
     }
@@ -360,9 +392,11 @@ contract Floor is ReentrancyGuard, EIP712 {
      * @param amount The amount to withdraw
      */
     function withdraw(address token, uint256 amount) external nonReentrant {
-        require(token != ETH_ADDRESS, "Use withdrawETH for ETH");
-        require(amount > 0, "Amount must be positive");
-        require(amount <= balanceOf[msg.sender][token], "Insufficient balance");
+        if (token == ETH_ADDRESS) revert InvalidAsset();
+        if (amount == 0) revert InvalidAmount(amount);
+        if (amount > balanceOf[msg.sender][token]) {
+            revert InsufficientContractBalance(token, amount, balanceOf[msg.sender][token]);
+        }
 
         balanceOf[msg.sender][token] -= amount;
         IERC20(token).safeTransfer(msg.sender, amount);
@@ -398,5 +432,89 @@ contract Floor is ReentrancyGuard, EIP712 {
             revert InvalidResolverSignature();
         }
         return recoveredSigner;
+    }
+
+    /**
+     * @notice Internal function to verify resolver signature using Ethereum Signed Message format
+     * @param signer The address that should have signed the message
+     * @param messageHash The hash of the message to verify
+     * @param signature The signature to verify
+     */
+    function _verifySignature(address signer, bytes32 messageHash, bytes calldata signature) internal pure {
+        bytes32 signedHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash));
+
+        // Extract signature components
+        if (signature.length != 65) revert InvalidSignature();
+        bytes32 r;
+        bytes32 s;
+        uint8 v;
+        assembly {
+            r := calldataload(signature.offset)
+            s := calldataload(add(signature.offset, 32))
+            v := byte(0, calldataload(add(signature.offset, 64)))
+        }
+
+        // Verify signature is from signer
+        if (ecrecover(signedHash, v, r, s) != signer) revert InvalidSignature();
+    }
+
+    /**
+     * @dev Verifies the signature of a game creation request and returns the resolver address.
+     * @param params Game creation parameters struct
+     * @param player The address of the player creating the game.
+     * @param serverSignature Signature from the server authorizing this game creation.
+     * @return resolver The address of the resolver who signed.
+     */
+    function _verifyCreateGameSignature(
+        CreateGameParams calldata params,
+        address player,
+        bytes calldata serverSignature
+    ) internal view returns (address) {
+        bytes32 messageHash = _hashTypedDataV4(
+            keccak256(
+                abi.encode(
+                    CREATE_GAME_TYPEHASH,
+                    params.nonce,
+                    params.token,
+                    params.betAmount,
+                    params.gameSeedHash,
+                    params.algorithm,
+                    params.gameConfig,
+                    player,
+                    params.deadline
+                )
+            )
+        );
+        return _verifyAndGetResolver(messageHash, serverSignature);
+    }
+
+    /**
+     * @dev Creates a new game and emits the GameCreated event.
+     * @param params Game creation parameters struct
+     * @param resolver The address of the resolver who created the game.
+     * @param player The address of the player creating the game.
+     */
+    function _createGame(CreateGameParams calldata params, address resolver, address player) internal {
+        // Mark nonce as used
+        usedNonces[params.nonce] = true;
+
+        // Create game
+        count += 1;
+
+        games[count] = Game({
+            player: player,
+            resolver: resolver,
+            token: params.token,
+            betAmount: params.betAmount,
+            gameSeedHash: params.gameSeedHash,
+            status: GameStatus.Active,
+            payoutAmount: 0,
+            gameSeed: "",
+            algorithm: params.algorithm,
+            gameConfig: params.gameConfig,
+            gameState: "",
+            createdAt: block.timestamp
+        });
+        emit GameCreated(params.nonce, count, player, resolver, params.token, params.betAmount, params.gameSeedHash);
     }
 }
