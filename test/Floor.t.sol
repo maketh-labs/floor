@@ -140,6 +140,48 @@ contract FloorTest is Test, DeployPermit2 {
         return abi.encodePacked(r, s, v);
     }
 
+    // Helper to create resolver signatures for cashOut
+    function createCashOutSignature(
+        uint256 id,
+        uint256 payoutAmount,
+        bytes32 gameState,
+        string memory gameSeed,
+        uint256 deadline
+    ) internal view returns (bytes memory) {
+        bytes32 messageHash = keccak256(
+            abi.encodePacked(
+                "\x19\x01",
+                domainSeparator,
+                keccak256(
+                    abi.encode(
+                        floor.CASH_OUT_TYPEHASH(), id, payoutAmount, gameState, keccak256(bytes(gameSeed)), deadline
+                    )
+                )
+            )
+        );
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(resolverPrivateKey, messageHash);
+        return abi.encodePacked(r, s, v);
+    }
+
+    // Helper to create resolver signatures for markGameAsLost
+    function createMarkLostSignature(uint256 id, bytes32 gameState, string memory gameSeed, uint256 deadline)
+        internal
+        view
+        returns (bytes memory)
+    {
+        bytes32 messageHash = keccak256(
+            abi.encodePacked(
+                "\x19\x01",
+                domainSeparator,
+                keccak256(
+                    abi.encode(floor.MARK_GAME_AS_LOST_TYPEHASH(), id, gameState, keccak256(bytes(gameSeed)), deadline)
+                )
+            )
+        );
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(resolverPrivateKey, messageHash);
+        return abi.encodePacked(r, s, v);
+    }
+
     // ============ BASIC TESTS ============
 
     function testConstructor() public {
@@ -538,5 +580,240 @@ contract FloorTest is Test, DeployPermit2 {
         vm.prank(player);
         vm.expectRevert(abi.encodeWithSelector(Floor.InvalidAmount.selector, wrongAmount));
         floor.createGameWithPermit2(params, signature, permit, transferDetails, permitSignature);
+    }
+
+    function testCreateGameETHNonceReuse() public {
+        uint256 nonce = 1;
+        uint256 deadline = block.timestamp + 1 hours;
+
+        Floor.CreateGameParams memory params = Floor.CreateGameParams({
+            nonce: nonce,
+            token: address(0),
+            betAmount: BET_AMOUNT,
+            gameSeedHash: GAME_SEED_HASH,
+            algorithm: ALGORITHM,
+            gameConfig: GAME_CONFIG,
+            deadline: deadline
+        });
+
+        bytes memory signature = createGameSignature(params, player);
+
+        vm.prank(player);
+        floor.createGame{value: BET_AMOUNT}(params, signature);
+
+        vm.prank(player);
+        vm.expectRevert(abi.encodeWithSelector(Floor.NonceAlreadyUsed.selector, nonce));
+        floor.createGame{value: BET_AMOUNT}(params, signature);
+    }
+
+    function testCashOutByResolver() public {
+        uint256 depositAmount = 1000 * 10 ** 18;
+        vm.prank(resolver);
+        token.approve(address(floor), depositAmount);
+        vm.prank(resolver);
+        floor.deposit(address(token), depositAmount);
+
+        uint256 nonce = 1;
+        uint256 deadline = block.timestamp + 1 hours;
+        uint256 betAmount = 100 * 10 ** 18;
+
+        Floor.CreateGameParams memory params = Floor.CreateGameParams({
+            nonce: nonce,
+            token: address(token),
+            betAmount: betAmount,
+            gameSeedHash: GAME_SEED_HASH,
+            algorithm: ALGORITHM,
+            gameConfig: GAME_CONFIG,
+            deadline: deadline
+        });
+
+        bytes memory signature = createGameSignature(params, player);
+
+        vm.prank(player);
+        token.approve(address(floor), betAmount);
+        vm.prank(player);
+        floor.createGame(params, signature);
+
+        uint256 payoutAmount = 50 * 10 ** 18;
+        bytes32 gameState = bytes32("QmState");
+        string memory gameSeed = "seed1";
+
+        uint256 playerBalanceBefore = token.balanceOf(player);
+        vm.prank(resolver);
+        floor.cashOut(1, payoutAmount, gameState, gameSeed, 0, "");
+
+        assertEq(token.balanceOf(player), playerBalanceBefore + payoutAmount);
+        assertEq(floor.balanceOf(resolver, address(token)), depositAmount - payoutAmount + betAmount);
+    }
+
+    function testCashOutByPlayerWithSignature() public {
+        uint256 depositAmount = 1000 * 10 ** 18;
+        vm.prank(resolver);
+        token.approve(address(floor), depositAmount);
+        vm.prank(resolver);
+        floor.deposit(address(token), depositAmount);
+
+        uint256 nonce = 1;
+        uint256 deadline = block.timestamp + 1 hours;
+        uint256 betAmount = 100 * 10 ** 18;
+
+        Floor.CreateGameParams memory params = Floor.CreateGameParams({
+            nonce: nonce,
+            token: address(token),
+            betAmount: betAmount,
+            gameSeedHash: GAME_SEED_HASH,
+            algorithm: ALGORITHM,
+            gameConfig: GAME_CONFIG,
+            deadline: deadline
+        });
+
+        bytes memory signature = createGameSignature(params, player);
+
+        vm.prank(player);
+        token.approve(address(floor), betAmount);
+        vm.prank(player);
+        floor.createGame(params, signature);
+
+        uint256 payoutAmount = 60 * 10 ** 18;
+        bytes32 gameState = bytes32("QmState");
+        string memory gameSeed = "seed2";
+
+        uint256 sigDeadline = block.timestamp + 1 hours;
+        bytes memory cashSig = createCashOutSignature(1, payoutAmount, gameState, gameSeed, sigDeadline);
+
+        uint256 playerBalanceBefore = token.balanceOf(player);
+        vm.prank(player);
+        floor.cashOut(1, payoutAmount, gameState, gameSeed, sigDeadline, cashSig);
+
+        assertEq(token.balanceOf(player), playerBalanceBefore + payoutAmount);
+        assertEq(floor.balanceOf(resolver, address(token)), depositAmount - payoutAmount + betAmount);
+    }
+
+    function testCashOutInsufficientBalance() public {
+        uint256 depositAmount = 10 * 10 ** 18;
+        vm.prank(resolver);
+        token.approve(address(floor), depositAmount);
+        vm.prank(resolver);
+        floor.deposit(address(token), depositAmount);
+
+        uint256 nonce = 1;
+        uint256 deadline = block.timestamp + 1 hours;
+        uint256 betAmount = 5 * 10 ** 18;
+
+        Floor.CreateGameParams memory params = Floor.CreateGameParams({
+            nonce: nonce,
+            token: address(token),
+            betAmount: betAmount,
+            gameSeedHash: GAME_SEED_HASH,
+            algorithm: ALGORITHM,
+            gameConfig: GAME_CONFIG,
+            deadline: deadline
+        });
+
+        bytes memory signature = createGameSignature(params, player);
+
+        vm.prank(player);
+        token.approve(address(floor), betAmount);
+        vm.prank(player);
+        floor.createGame(params, signature);
+
+        uint256 payoutAmount = 20 * 10 ** 18;
+
+        vm.prank(resolver);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Floor.InsufficientContractBalance.selector, address(token), payoutAmount, depositAmount
+            )
+        );
+        floor.cashOut(1, payoutAmount, bytes32("QmState"), "seed", 0, "");
+    }
+
+    function testMarkGameAsLostByResolver() public {
+        uint256 depositAmount = 1000 * 10 ** 18;
+        vm.prank(resolver);
+        token.approve(address(floor), depositAmount);
+        vm.prank(resolver);
+        floor.deposit(address(token), depositAmount);
+
+        uint256 nonce = 1;
+        uint256 deadline = block.timestamp + 1 hours;
+        uint256 betAmount = 100 * 10 ** 18;
+
+        Floor.CreateGameParams memory params = Floor.CreateGameParams({
+            nonce: nonce,
+            token: address(token),
+            betAmount: betAmount,
+            gameSeedHash: GAME_SEED_HASH,
+            algorithm: ALGORITHM,
+            gameConfig: GAME_CONFIG,
+            deadline: deadline
+        });
+
+        bytes memory signature = createGameSignature(params, player);
+
+        vm.prank(player);
+        token.approve(address(floor), betAmount);
+        vm.prank(player);
+        floor.createGame(params, signature);
+
+        bytes32 gameState = bytes32("QmLost");
+        string memory gameSeed = "lost";
+
+        vm.prank(resolver);
+        floor.markGameAsLost(1, gameState, gameSeed, 0, "");
+
+        assertEq(floor.balanceOf(resolver, address(token)), depositAmount + betAmount);
+    }
+
+    function testMarkGameAsLostByPlayerWithSignature() public {
+        uint256 depositAmount = 500 * 10 ** 18;
+        vm.prank(resolver);
+        token.approve(address(floor), depositAmount);
+        vm.prank(resolver);
+        floor.deposit(address(token), depositAmount);
+
+        uint256 nonce = 1;
+        uint256 deadline = block.timestamp + 1 hours;
+        uint256 betAmount = 50 * 10 ** 18;
+
+        Floor.CreateGameParams memory params = Floor.CreateGameParams({
+            nonce: nonce,
+            token: address(token),
+            betAmount: betAmount,
+            gameSeedHash: GAME_SEED_HASH,
+            algorithm: ALGORITHM,
+            gameConfig: GAME_CONFIG,
+            deadline: deadline
+        });
+
+        bytes memory signature = createGameSignature(params, player);
+
+        vm.prank(player);
+        token.approve(address(floor), betAmount);
+        vm.prank(player);
+        floor.createGame(params, signature);
+
+        bytes32 gameState = bytes32("QmLost");
+        string memory gameSeed = "lost2";
+
+        uint256 sigDeadline = block.timestamp + 1 hours;
+        bytes memory sigLost = createMarkLostSignature(1, gameState, gameSeed, sigDeadline);
+
+        vm.prank(player);
+        floor.markGameAsLost(1, gameState, gameSeed, sigDeadline, sigLost);
+
+        assertEq(floor.balanceOf(resolver, address(token)), depositAmount + betAmount);
+    }
+
+    function testDepositInvalidAmount() public {
+        vm.prank(resolver);
+        vm.expectRevert(abi.encodeWithSelector(Floor.InvalidAmount.selector, 0));
+        floor.deposit(address(token), 0);
+    }
+
+    function testDepositInvalidAsset() public {
+        vm.prank(resolver);
+        vm.expectRevert(Floor.InvalidAsset.selector);
+        floor.deposit(address(0), 1);
     }
 }
