@@ -6,6 +6,7 @@ import {Floor} from "../src/Floor.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import {ISignatureTransfer} from "permit2/src/interfaces/ISignatureTransfer.sol";
 import {DeployPermit2} from "permit2/test/utils/DeployPermit2.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract FloorTest is Test, DeployPermit2 {
     Floor public floor;
@@ -43,8 +44,17 @@ contract FloorTest is Test, DeployPermit2 {
         // Deploy actual Permit2 contract
         permit2 = ISignatureTransfer(deployPermit2());
 
-        // Deploy Floor with actual Permit2
-        floor = new Floor(address(permit2));
+        // Deploy Floor implementation
+        Floor implementation = new Floor(address(permit2));
+        
+        // Deploy proxy with initialization
+        bytes memory initData = abi.encodeWithSelector(
+            Floor.initialize.selector,
+            address(this) // owner
+        );
+        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
+        floor = Floor(payable(address(proxy)));
+        
         token = new ERC20Mock();
 
         // Set up resolver account

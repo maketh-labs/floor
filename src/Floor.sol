@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.30;
 
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import {EIP712Upgradeable} from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {ISignatureTransfer} from "permit2/src/interfaces/ISignatureTransfer.sol";
 
 /**
@@ -20,7 +23,13 @@ import {ISignatureTransfer} from "permit2/src/interfaces/ISignatureTransfer.sol"
  * - Fully decentralized (no owner or admin)
  * - Permit2 integration for gasless ERC20 approvals
  */
-contract Floor is ReentrancyGuard, EIP712 {
+contract Floor is 
+    Initializable, 
+    ReentrancyGuardUpgradeable, 
+    EIP712Upgradeable, 
+    UUPSUpgradeable, 
+    OwnableUpgradeable 
+{
     using SafeERC20 for IERC20;
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -149,12 +158,16 @@ contract Floor is ReentrancyGuard, EIP712 {
     /*                        CONSTRUCTOR                         */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /**
-     * @dev Constructor sets initial configuration
-     * @param permit2 Address of the Permit2 contract
-     */
-    constructor(address permit2) EIP712("Floor", "1") {
-        PERMIT2 = ISignatureTransfer(permit2);
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor(address _permit2) {
+        PERMIT2 = ISignatureTransfer(_permit2);
+        _disableInitializers();
+    }
+
+    function initialize(address _owner) public initializer {
+        __Ownable_init(_owner);
+        __ReentrancyGuard_init();
+        __EIP712_init("Floor", "1");
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -494,4 +507,17 @@ contract Floor is ReentrancyGuard, EIP712 {
         });
         emit GameCreated(params.nonce, count, player, resolver, params.token, params.betAmount, params.gameSeedHash);
     }
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                    UPGRADE AUTHORIZATION                   */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                        STORAGE GAP                         */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    // @notice Reserved slots for upgradeability
+    uint256[50] private __gap; // 50 reserved slots
 }
