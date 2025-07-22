@@ -23,13 +23,7 @@ import {ISignatureTransfer} from "permit2/src/interfaces/ISignatureTransfer.sol"
  * - Fully decentralized (no owner or admin)
  * - Permit2 integration for gasless ERC20 approvals
  */
-contract Floor is 
-    Initializable, 
-    ReentrancyGuardUpgradeable, 
-    EIP712Upgradeable, 
-    UUPSUpgradeable, 
-    OwnableUpgradeable 
-{
+contract Floor is Initializable, ReentrancyGuardUpgradeable, EIP712Upgradeable, UUPSUpgradeable, OwnableUpgradeable {
     using SafeERC20 for IERC20;
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -445,8 +439,6 @@ contract Floor is
         }
         return recoveredSigner;
     }
-
-
 
     /**
      * @dev Verifies the signature of a game creation request and returns the resolver address.

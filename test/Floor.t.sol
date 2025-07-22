@@ -46,7 +46,7 @@ contract FloorTest is Test, DeployPermit2 {
 
         // Deploy Floor implementation
         Floor implementation = new Floor(address(permit2));
-        
+
         // Deploy proxy with initialization
         bytes memory initData = abi.encodeWithSelector(
             Floor.initialize.selector,
@@ -54,7 +54,7 @@ contract FloorTest is Test, DeployPermit2 {
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
         floor = Floor(payable(address(proxy)));
-        
+
         token = new ERC20Mock();
 
         // Set up resolver account
