@@ -7,10 +7,8 @@ import {Floor} from "../src/Floor.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract DeployFloor is Script {
-    // Permit2 mainnet address
-    address constant PERMIT2_MAINNET = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
-
     function run() external returns (address proxy, address implementation) {
+        address permit2 = vm.envAddress("PERMIT2");
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerPrivateKey);
 
@@ -20,7 +18,7 @@ contract DeployFloor is Script {
         vm.startBroadcast(deployerPrivateKey);
 
         // Deploy the implementation contract
-        implementation = address(new Floor(PERMIT2_MAINNET));
+        implementation = address(new Floor(permit2));
         console.log("Floor implementation deployed at:", implementation);
 
         // Prepare initialization data

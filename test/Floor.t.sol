@@ -33,7 +33,7 @@ contract FloorTest is Test, DeployPermit2 {
 
     // Type hashes
     bytes32 public constant CREATE_GAME_TYPEHASH = keccak256(
-        "CreateGame(uint256 nonce,address token,uint256 betAmount,bytes32 gameSeedHash,bytes32 algorithm,bytes32 gameConfig,address player,uint256 deadline)"
+        "CreateGame(address token,uint256 betAmount,bytes32 gameSeedHash,bytes32 algorithm,bytes32 gameConfig,address player,uint256 deadline)"
     );
 
     bytes32 public constant PERMIT_TRANSFER_FROM_TYPEHASH = keccak256(
@@ -103,7 +103,6 @@ contract FloorTest is Test, DeployPermit2 {
                 keccak256(
                     abi.encode(
                         CREATE_GAME_TYPEHASH,
-                        params.nonce,
                         params.token,
                         params.betAmount,
                         params.gameSeedHash,
@@ -152,21 +151,17 @@ contract FloorTest is Test, DeployPermit2 {
 
     // Helper to create resolver signatures for cashOut
     function createCashOutSignature(
-        uint256 id,
+        bytes32 gameId,
         uint256 payoutAmount,
         bytes32 gameState,
-        string memory gameSeed,
+        bytes32 gameSeed,
         uint256 deadline
     ) internal view returns (bytes memory) {
         bytes32 messageHash = keccak256(
             abi.encodePacked(
                 "\x19\x01",
                 domainSeparator,
-                keccak256(
-                    abi.encode(
-                        floor.CASH_OUT_TYPEHASH(), id, payoutAmount, gameState, keccak256(bytes(gameSeed)), deadline
-                    )
-                )
+                keccak256(abi.encode(floor.CASH_OUT_TYPEHASH(), gameId, payoutAmount, gameState, gameSeed, deadline))
             )
         );
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(resolverPrivateKey, messageHash);
@@ -174,7 +169,7 @@ contract FloorTest is Test, DeployPermit2 {
     }
 
     // Helper to create resolver signatures for markGameAsLost
-    function createMarkLostSignature(uint256 id, bytes32 gameState, string memory gameSeed, uint256 deadline)
+    function createMarkLostSignature(bytes32 gameId, bytes32 gameState, bytes32 gameSeed, uint256 deadline)
         internal
         view
         returns (bytes memory)
@@ -183,9 +178,7 @@ contract FloorTest is Test, DeployPermit2 {
             abi.encodePacked(
                 "\x19\x01",
                 domainSeparator,
-                keccak256(
-                    abi.encode(floor.MARK_GAME_AS_LOST_TYPEHASH(), id, gameState, keccak256(bytes(gameSeed)), deadline)
-                )
+                keccak256(abi.encode(floor.MARK_GAME_AS_LOST_TYPEHASH(), gameId, gameState, gameSeed, deadline))
             )
         );
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(resolverPrivateKey, messageHash);
@@ -196,7 +189,6 @@ contract FloorTest is Test, DeployPermit2 {
 
     function testConstructor() public {
         // Test that the contract is properly initialized
-        assertEq(floor.count(), 0);
         assertEq(floor.ETH_ADDRESS(), address(0));
     }
 
@@ -270,11 +262,10 @@ contract FloorTest is Test, DeployPermit2 {
     // ============ GAME CREATION TESTS ============
 
     function testCreateGameETH() public {
-        uint256 nonce = 1;
+        uint256 id = 1;
         uint256 deadline = block.timestamp + 1 hours;
 
         Floor.CreateGameParams memory params = Floor.CreateGameParams({
-            nonce: nonce,
             token: address(0), // ETH
             betAmount: BET_AMOUNT,
             gameSeedHash: GAME_SEED_HASH,
@@ -289,20 +280,18 @@ contract FloorTest is Test, DeployPermit2 {
         floor.createGame{value: BET_AMOUNT}(params, signature);
 
         // Verify game was created correctly
-        assertEq(floor.count(), 1);
-        assertTrue(floor.usedNonces(nonce));
+        assertTrue(floor.usedSignatures(keccak256(signature)));
     }
 
     // ============ PERMIT2 TESTS ============
 
     function testCreateGameWithPermit2() public {
-        uint256 nonce = 1;
+        uint256 id = 1;
         uint256 deadline = block.timestamp + 1 hours;
         uint256 permit2Nonce = 0;
         uint256 betAmount = 100 * 10 ** 18;
 
         Floor.CreateGameParams memory params = Floor.CreateGameParams({
-            nonce: nonce,
             token: address(token),
             betAmount: betAmount,
             gameSeedHash: GAME_SEED_HASH,
@@ -331,15 +320,14 @@ contract FloorTest is Test, DeployPermit2 {
         floor.createGameWithPermit2(params, signature, permit, transferDetails, permitSignature);
 
         // Verify game was created correctly
-        assertEq(floor.count(), 1);
-        assertTrue(floor.usedNonces(nonce));
+        assertTrue(floor.usedSignatures(keccak256(signature)));
 
         // Verify tokens were transferred
         assertEq(token.balanceOf(address(floor)), betAmount);
     }
 
     function testCreateGameWithPermit2TokenMismatch() public {
-        uint256 nonce = 1;
+        uint256 id = 1;
         uint256 deadline = block.timestamp + 1 hours;
         uint256 permit2Nonce = 0;
         uint256 betAmount = 100 * 10 ** 18;
@@ -349,7 +337,6 @@ contract FloorTest is Test, DeployPermit2 {
         differentToken.mint(player, 1000 * 10 ** 18);
 
         Floor.CreateGameParams memory params = Floor.CreateGameParams({
-            nonce: nonce,
             token: address(token), // Using original token
             betAmount: betAmount,
             gameSeedHash: GAME_SEED_HASH,
@@ -383,14 +370,13 @@ contract FloorTest is Test, DeployPermit2 {
     }
 
     function testCreateGameWithPermit2InsufficientAmount() public {
-        uint256 nonce = 1;
+        uint256 id = 1;
         uint256 deadline = block.timestamp + 1 hours;
         uint256 permit2Nonce = 0;
         uint256 betAmount = 100 * 10 ** 18;
         uint256 permitAmount = 50 * 10 ** 18; // Less than bet amount
 
         Floor.CreateGameParams memory params = Floor.CreateGameParams({
-            nonce: nonce,
             token: address(token),
             betAmount: betAmount,
             gameSeedHash: GAME_SEED_HASH,
@@ -427,13 +413,12 @@ contract FloorTest is Test, DeployPermit2 {
         // Set a proper timestamp to avoid underflow
         vm.warp(2 hours);
 
-        uint256 nonce = 1;
+        uint256 id = 1;
         uint256 deadline = block.timestamp - 1 hours; // Now this won't underflow
         uint256 permit2Nonce = 0;
         uint256 betAmount = 100 * 10 ** 18;
 
         Floor.CreateGameParams memory params = Floor.CreateGameParams({
-            nonce: nonce,
             token: address(token),
             betAmount: betAmount,
             gameSeedHash: GAME_SEED_HASH,
@@ -464,13 +449,12 @@ contract FloorTest is Test, DeployPermit2 {
     }
 
     function testCreateGameWithPermit2NonceReuse() public {
-        uint256 nonce = 1;
+        uint256 id = 1;
         uint256 deadline = block.timestamp + 1 hours;
         uint256 permit2Nonce = 0;
         uint256 betAmount = 100 * 10 ** 18;
 
         Floor.CreateGameParams memory params = Floor.CreateGameParams({
-            nonce: nonce,
             token: address(token),
             betAmount: betAmount,
             gameSeedHash: GAME_SEED_HASH,
@@ -501,18 +485,17 @@ contract FloorTest is Test, DeployPermit2 {
 
         // Second call with same nonce should fail
         vm.prank(player);
-        vm.expectRevert(abi.encodeWithSelector(Floor.NonceAlreadyUsed.selector, nonce));
+        vm.expectRevert(abi.encodeWithSelector(Floor.SignatureAlreadyUsed.selector, keccak256(signature)));
         floor.createGameWithPermit2(params, signature, permit, transferDetails, permitSignature);
     }
 
     function testCreateGameWithPermit2InvalidTransferDestination() public {
-        uint256 nonce = 1;
+        uint256 id = 1;
         uint256 deadline = block.timestamp + 1 hours;
         uint256 permit2Nonce = 0;
         uint256 betAmount = 100 * 10 ** 18;
 
         Floor.CreateGameParams memory params = Floor.CreateGameParams({
-            nonce: nonce,
             token: address(token),
             betAmount: betAmount,
             gameSeedHash: GAME_SEED_HASH,
@@ -550,14 +533,13 @@ contract FloorTest is Test, DeployPermit2 {
     }
 
     function testCreateGameWithPermit2InvalidRequestedAmount() public {
-        uint256 nonce = 1;
+        uint256 id = 1;
         uint256 deadline = block.timestamp + 1 hours;
         uint256 permit2Nonce = 0;
         uint256 betAmount = 100 * 10 ** 18;
         uint256 wrongAmount = 50 * 10 ** 18; // Different from bet amount
 
         Floor.CreateGameParams memory params = Floor.CreateGameParams({
-            nonce: nonce,
             token: address(token),
             betAmount: betAmount,
             gameSeedHash: GAME_SEED_HASH,
@@ -593,11 +575,10 @@ contract FloorTest is Test, DeployPermit2 {
     }
 
     function testCreateGameETHNonceReuse() public {
-        uint256 nonce = 1;
+        uint256 id = 1;
         uint256 deadline = block.timestamp + 1 hours;
 
         Floor.CreateGameParams memory params = Floor.CreateGameParams({
-            nonce: nonce,
             token: address(0),
             betAmount: BET_AMOUNT,
             gameSeedHash: GAME_SEED_HASH,
@@ -612,7 +593,7 @@ contract FloorTest is Test, DeployPermit2 {
         floor.createGame{value: BET_AMOUNT}(params, signature);
 
         vm.prank(player);
-        vm.expectRevert(abi.encodeWithSelector(Floor.NonceAlreadyUsed.selector, nonce));
+        vm.expectRevert(abi.encodeWithSelector(Floor.SignatureAlreadyUsed.selector, keccak256(signature)));
         floor.createGame{value: BET_AMOUNT}(params, signature);
     }
 
@@ -623,12 +604,11 @@ contract FloorTest is Test, DeployPermit2 {
         vm.prank(resolver);
         floor.deposit(address(token), depositAmount);
 
-        uint256 nonce = 1;
+        uint256 id = 1;
         uint256 deadline = block.timestamp + 1 hours;
         uint256 betAmount = 100 * 10 ** 18;
 
         Floor.CreateGameParams memory params = Floor.CreateGameParams({
-            nonce: nonce,
             token: address(token),
             betAmount: betAmount,
             gameSeedHash: GAME_SEED_HASH,
@@ -646,11 +626,11 @@ contract FloorTest is Test, DeployPermit2 {
 
         uint256 payoutAmount = 50 * 10 ** 18;
         bytes32 gameState = bytes32("QmState");
-        string memory gameSeed = "seed1";
+        bytes32 gameSeed = keccak256("seed1");
 
         uint256 playerBalanceBefore = token.balanceOf(player);
         vm.prank(resolver);
-        floor.cashOut(1, payoutAmount, gameState, gameSeed, 0, "");
+        floor.cashOut(keccak256(signature), payoutAmount, gameState, gameSeed, 0, "");
 
         assertEq(token.balanceOf(player), playerBalanceBefore + payoutAmount);
         assertEq(floor.balanceOf(resolver, address(token)), depositAmount - payoutAmount + betAmount);
@@ -663,12 +643,11 @@ contract FloorTest is Test, DeployPermit2 {
         vm.prank(resolver);
         floor.deposit(address(token), depositAmount);
 
-        uint256 nonce = 1;
+        uint256 id = 1;
         uint256 deadline = block.timestamp + 1 hours;
         uint256 betAmount = 100 * 10 ** 18;
 
         Floor.CreateGameParams memory params = Floor.CreateGameParams({
-            nonce: nonce,
             token: address(token),
             betAmount: betAmount,
             gameSeedHash: GAME_SEED_HASH,
@@ -686,14 +665,15 @@ contract FloorTest is Test, DeployPermit2 {
 
         uint256 payoutAmount = 60 * 10 ** 18;
         bytes32 gameState = bytes32("QmState");
-        string memory gameSeed = "seed2";
+        bytes32 gameSeed = keccak256("seed2");
 
         uint256 sigDeadline = block.timestamp + 1 hours;
-        bytes memory cashSig = createCashOutSignature(1, payoutAmount, gameState, gameSeed, sigDeadline);
+        bytes memory cashSig =
+            createCashOutSignature(keccak256(signature), payoutAmount, gameState, gameSeed, sigDeadline);
 
         uint256 playerBalanceBefore = token.balanceOf(player);
         vm.prank(player);
-        floor.cashOut(1, payoutAmount, gameState, gameSeed, sigDeadline, cashSig);
+        floor.cashOut(keccak256(signature), payoutAmount, gameState, gameSeed, sigDeadline, cashSig);
 
         assertEq(token.balanceOf(player), playerBalanceBefore + payoutAmount);
         assertEq(floor.balanceOf(resolver, address(token)), depositAmount - payoutAmount + betAmount);
@@ -706,12 +686,11 @@ contract FloorTest is Test, DeployPermit2 {
         vm.prank(resolver);
         floor.deposit(address(token), depositAmount);
 
-        uint256 nonce = 1;
+        uint256 id = 1;
         uint256 deadline = block.timestamp + 1 hours;
         uint256 betAmount = 5 * 10 ** 18;
 
         Floor.CreateGameParams memory params = Floor.CreateGameParams({
-            nonce: nonce,
             token: address(token),
             betAmount: betAmount,
             gameSeedHash: GAME_SEED_HASH,
@@ -732,10 +711,10 @@ contract FloorTest is Test, DeployPermit2 {
         vm.prank(resolver);
         vm.expectRevert(
             abi.encodeWithSelector(
-                Floor.InsufficientContractBalance.selector, address(token), payoutAmount, depositAmount
+                Floor.InsufficientContractBalance.selector, address(token), payoutAmount, depositAmount + betAmount
             )
         );
-        floor.cashOut(1, payoutAmount, bytes32("QmState"), "seed", 0, "");
+        floor.cashOut(keccak256(signature), payoutAmount, bytes32("QmState"), keccak256("seed"), 0, "");
     }
 
     function testMarkGameAsLostByResolver() public {
@@ -745,12 +724,11 @@ contract FloorTest is Test, DeployPermit2 {
         vm.prank(resolver);
         floor.deposit(address(token), depositAmount);
 
-        uint256 nonce = 1;
+        uint256 id = 1;
         uint256 deadline = block.timestamp + 1 hours;
         uint256 betAmount = 100 * 10 ** 18;
 
         Floor.CreateGameParams memory params = Floor.CreateGameParams({
-            nonce: nonce,
             token: address(token),
             betAmount: betAmount,
             gameSeedHash: GAME_SEED_HASH,
@@ -767,10 +745,10 @@ contract FloorTest is Test, DeployPermit2 {
         floor.createGame(params, signature);
 
         bytes32 gameState = bytes32("QmLost");
-        string memory gameSeed = "lost";
+        bytes32 gameSeed = keccak256("lost");
 
         vm.prank(resolver);
-        floor.markGameAsLost(1, gameState, gameSeed, 0, "");
+        floor.markGameAsLost(keccak256(signature), gameState, gameSeed, 0, "");
 
         assertEq(floor.balanceOf(resolver, address(token)), depositAmount + betAmount);
     }
@@ -782,12 +760,11 @@ contract FloorTest is Test, DeployPermit2 {
         vm.prank(resolver);
         floor.deposit(address(token), depositAmount);
 
-        uint256 nonce = 1;
+        uint256 id = 1;
         uint256 deadline = block.timestamp + 1 hours;
         uint256 betAmount = 50 * 10 ** 18;
 
         Floor.CreateGameParams memory params = Floor.CreateGameParams({
-            nonce: nonce,
             token: address(token),
             betAmount: betAmount,
             gameSeedHash: GAME_SEED_HASH,
@@ -804,13 +781,13 @@ contract FloorTest is Test, DeployPermit2 {
         floor.createGame(params, signature);
 
         bytes32 gameState = bytes32("QmLost");
-        string memory gameSeed = "lost2";
+        bytes32 gameSeed = keccak256("lost2");
 
         uint256 sigDeadline = block.timestamp + 1 hours;
-        bytes memory sigLost = createMarkLostSignature(1, gameState, gameSeed, sigDeadline);
+        bytes memory sigLost = createMarkLostSignature(keccak256(signature), gameState, gameSeed, sigDeadline);
 
         vm.prank(player);
-        floor.markGameAsLost(1, gameState, gameSeed, sigDeadline, sigLost);
+        floor.markGameAsLost(keccak256(signature), gameState, gameSeed, sigDeadline, sigLost);
 
         assertEq(floor.balanceOf(resolver, address(token)), depositAmount + betAmount);
     }
