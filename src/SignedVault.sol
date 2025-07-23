@@ -12,7 +12,7 @@ import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {ISignatureTransfer} from "permit2/src/interfaces/ISignatureTransfer.sol";
 
 /**
- * @title Tapital
+ * @title SignedVault
  * @dev A deposit/withdrawal contract where users deposit with specific resolvers and need resolver signatures to withdraw
  *
  * Features:
@@ -23,7 +23,7 @@ import {ISignatureTransfer} from "permit2/src/interfaces/ISignatureTransfer.sol"
  * - Resolver balance tracking to prevent over-withdrawals
  * - Decentralized resolver system (no global backend signer)
  */
-contract Tapital is
+contract SignedVault is
     Initializable,
     ReentrancyGuardUpgradeable,
     EIP712Upgradeable,
@@ -95,7 +95,7 @@ contract Tapital is
     function initialize(address _owner) public initializer {
         __Ownable_init(_owner);
         __ReentrancyGuard_init();
-        __EIP712_init("Tapital", "1");
+        __EIP712_init("SignedVault", "1");
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/

@@ -12,7 +12,7 @@ import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {ISignatureTransfer} from "permit2/src/interfaces/ISignatureTransfer.sol";
 
 /**
- * @title Floor
+ * @title CommitReveal
  * @dev A fully decentralized gaming contract that supports any asset (ETH/ERC20) with provable fairness
  *
  * Features:
@@ -23,7 +23,7 @@ import {ISignatureTransfer} from "permit2/src/interfaces/ISignatureTransfer.sol"
  * - Fully decentralized (no owner or admin)
  * - Permit2 integration for gasless ERC20 approvals
  */
-contract Floor is Initializable, ReentrancyGuardUpgradeable, EIP712Upgradeable, UUPSUpgradeable, OwnableUpgradeable {
+contract CommitReveal is Initializable, ReentrancyGuardUpgradeable, EIP712Upgradeable, UUPSUpgradeable, OwnableUpgradeable {
     using SafeERC20 for IERC20;
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -158,7 +158,7 @@ contract Floor is Initializable, ReentrancyGuardUpgradeable, EIP712Upgradeable, 
     function initialize(address _owner) public initializer {
         __Ownable_init(_owner);
         __ReentrancyGuard_init();
-        __EIP712_init("Floor", "1");
+        __EIP712_init("CommitReveal", "1");
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/

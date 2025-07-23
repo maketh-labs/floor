@@ -2,14 +2,14 @@
 pragma solidity ^0.8.30;
 
 import {Test} from "forge-std/Test.sol";
-import {Tapital} from "../src/Tapital.sol";
+import {SignedVault} from "../src/SignedVault.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import {ISignatureTransfer} from "permit2/src/interfaces/ISignatureTransfer.sol";
 import {DeployPermit2} from "permit2/test/utils/DeployPermit2.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
-contract TapitalTest is Test, DeployPermit2 {
-    Tapital public tapital;
+contract SignedVaultTest is Test, DeployPermit2 {
+    SignedVault public signedVault;
     ERC20Mock public token;
     ISignatureTransfer public permit2;
 
@@ -52,15 +52,15 @@ contract TapitalTest is Test, DeployPermit2 {
         (owner, ownerPrivateKey) = makeAddrAndKey("owner");
 
         // Deploy Tapital implementation
-        Tapital implementation = new Tapital(address(permit2));
+        SignedVault implementation = new SignedVault(address(permit2));
 
         // Deploy proxy with initialization
         bytes memory initData = abi.encodeWithSelector(
-            Tapital.initialize.selector,
+            SignedVault.initialize.selector,
             owner // owner
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
-        tapital = Tapital(payable(address(proxy)));
+        signedVault = SignedVault(payable(address(proxy)));
         token = new ERC20Mock();
 
         // Fund test accounts
@@ -75,10 +75,10 @@ contract TapitalTest is Test, DeployPermit2 {
         domainSeparator = keccak256(
             abi.encode(
                 keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
-                keccak256("Tapital"),
+                keccak256("SignedVault"),
                 keccak256("1"),
                 block.chainid,
-                address(tapital)
+                address(signedVault)
             )
         );
 
@@ -140,52 +140,52 @@ contract TapitalTest is Test, DeployPermit2 {
     // ============ CONSTRUCTOR TESTS ============
 
     function testConstructor() public {
-        assertEq(tapital.owner(), owner);
-        assertEq(address(tapital.PERMIT2()), address(permit2));
-        assertEq(tapital.ETH_ADDRESS(), address(0));
+        assertEq(signedVault.owner(), owner);
+        assertEq(address(signedVault.PERMIT2()), address(permit2));
+        assertEq(signedVault.ETH_ADDRESS(), address(0));
     }
 
     // ============ DEPOSIT TESTS ============
 
     function testDepositETH() public {
         vm.prank(user);
-        tapital.depositETH{value: DEPOSIT_AMOUNT}(resolver1);
+        signedVault.depositETH{value: DEPOSIT_AMOUNT}(resolver1);
 
         // Contract should receive the ETH
-        assertEq(address(tapital).balance, DEPOSIT_AMOUNT);
+        assertEq(address(signedVault).balance, DEPOSIT_AMOUNT);
         // Resolver1 should be credited with the deposit
-        assertEq(tapital.resolverBalanceOf(resolver1, tapital.ETH_ADDRESS()), DEPOSIT_AMOUNT);
+        assertEq(signedVault.resolverBalanceOf(resolver1, signedVault.ETH_ADDRESS()), DEPOSIT_AMOUNT);
     }
 
     function testDepositETHInvalidResolver() public {
         vm.prank(user);
-        vm.expectRevert(Tapital.InvalidResolver.selector);
-        tapital.depositETH{value: DEPOSIT_AMOUNT}(address(0));
+        vm.expectRevert(SignedVault.InvalidResolver.selector);
+        signedVault.depositETH{value: DEPOSIT_AMOUNT}(address(0));
     }
 
     function testDepositERC20() public {
         vm.prank(user);
-        token.approve(address(tapital), TOKEN_DEPOSIT_AMOUNT);
+        token.approve(address(signedVault), TOKEN_DEPOSIT_AMOUNT);
 
         vm.prank(user);
-        tapital.deposit(address(token), TOKEN_DEPOSIT_AMOUNT, resolver1);
+        signedVault.deposit(address(token), TOKEN_DEPOSIT_AMOUNT, resolver1);
 
         // Contract should receive the tokens
-        assertEq(token.balanceOf(address(tapital)), TOKEN_DEPOSIT_AMOUNT);
+        assertEq(token.balanceOf(address(signedVault)), TOKEN_DEPOSIT_AMOUNT);
         // Resolver1 should be credited with the deposit
-        assertEq(tapital.resolverBalanceOf(resolver1, address(token)), TOKEN_DEPOSIT_AMOUNT);
+        assertEq(signedVault.resolverBalanceOf(resolver1, address(token)), TOKEN_DEPOSIT_AMOUNT);
     }
 
     function testDepositERC20InvalidAsset() public {
         vm.prank(user);
-        vm.expectRevert(Tapital.InvalidAsset.selector);
-        tapital.deposit(address(0), TOKEN_DEPOSIT_AMOUNT, resolver1);
+        vm.expectRevert(SignedVault.InvalidAsset.selector);
+        signedVault.deposit(address(0), TOKEN_DEPOSIT_AMOUNT, resolver1);
     }
 
     function testDepositERC20InvalidResolver() public {
         vm.prank(user);
-        vm.expectRevert(Tapital.InvalidResolver.selector);
-        tapital.deposit(address(token), TOKEN_DEPOSIT_AMOUNT, address(0));
+        vm.expectRevert(SignedVault.InvalidResolver.selector);
+        signedVault.deposit(address(token), TOKEN_DEPOSIT_AMOUNT, address(0));
     }
 
     // ============ PERMIT2 DEPOSIT TESTS ============
@@ -202,15 +202,15 @@ contract TapitalTest is Test, DeployPermit2 {
             deadline: deadline
         });
 
-        bytes memory permitSignature = createPermit2Signature(address(token), amount, nonce, deadline, address(tapital));
+        bytes memory permitSignature = createPermit2Signature(address(token), amount, nonce, deadline, address(signedVault));
 
         vm.prank(user);
-        tapital.depositWithPermit2(resolver1, permit, permitSignature);
+        signedVault.depositWithPermit2(resolver1, permit, permitSignature);
 
         // Contract should receive the tokens
-        assertEq(token.balanceOf(address(tapital)), amount);
+        assertEq(token.balanceOf(address(signedVault)), amount);
         // Resolver1 should be credited with the deposit
-        assertEq(tapital.resolverBalanceOf(resolver1, address(token)), amount);
+        assertEq(signedVault.resolverBalanceOf(resolver1, address(token)), amount);
     }
 
     function testDepositWithPermit2InvalidAsset() public {
@@ -224,7 +224,7 @@ contract TapitalTest is Test, DeployPermit2 {
             deadline: deadline
         });
 
-        bytes memory permitSignature = createPermit2Signature(address(token), amount, nonce, deadline, address(tapital));
+        bytes memory permitSignature = createPermit2Signature(address(token), amount, nonce, deadline, address(signedVault));
 
         // Create permit for ETH address (invalid)
         ISignatureTransfer.PermitTransferFrom memory invalidPermit = ISignatureTransfer.PermitTransferFrom({
@@ -234,11 +234,11 @@ contract TapitalTest is Test, DeployPermit2 {
         });
 
         bytes memory invalidPermitSignature =
-            createPermit2Signature(address(0), amount, nonce, deadline, address(tapital));
+            createPermit2Signature(address(0), amount, nonce, deadline, address(signedVault));
 
         vm.prank(user);
-        vm.expectRevert(Tapital.InvalidAsset.selector);
-        tapital.depositWithPermit2(resolver1, invalidPermit, invalidPermitSignature);
+        vm.expectRevert(SignedVault.InvalidAsset.selector);
+        signedVault.depositWithPermit2(resolver1, invalidPermit, invalidPermitSignature);
     }
 
     // ============ WITHDRAWAL TESTS ============
@@ -246,7 +246,7 @@ contract TapitalTest is Test, DeployPermit2 {
     function testWithdrawETH() public {
         // First deposit
         vm.prank(user);
-        tapital.depositETH{value: DEPOSIT_AMOUNT}(resolver1);
+        signedVault.depositETH{value: DEPOSIT_AMOUNT}(resolver1);
 
         uint256 withdrawAmount = DEPOSIT_AMOUNT / 2;
         uint256 deadline = block.timestamp + 1 hours;
@@ -257,19 +257,19 @@ contract TapitalTest is Test, DeployPermit2 {
         uint256 balanceBefore = user.balance;
 
         vm.prank(user);
-        tapital.withdrawETH(user, withdrawAmount, resolver1, deadline, signature);
+        signedVault.withdrawETH(user, withdrawAmount, resolver1, deadline, signature);
 
         assertEq(user.balance, balanceBefore + withdrawAmount);
-        assertEq(tapital.resolverBalanceOf(resolver1, address(0)), DEPOSIT_AMOUNT - withdrawAmount);
-        assertTrue(tapital.usedSignatures(keccak256(signature)));
+        assertEq(signedVault.resolverBalanceOf(resolver1, address(0)), DEPOSIT_AMOUNT - withdrawAmount);
+        assertTrue(signedVault.usedSignatures(keccak256(signature)));
     }
 
     function testWithdrawERC20() public {
         // First deposit
         vm.prank(user);
-        token.approve(address(tapital), TOKEN_DEPOSIT_AMOUNT);
+        token.approve(address(signedVault), TOKEN_DEPOSIT_AMOUNT);
         vm.prank(user);
-        tapital.deposit(address(token), TOKEN_DEPOSIT_AMOUNT, resolver1);
+        signedVault.deposit(address(token), TOKEN_DEPOSIT_AMOUNT, resolver1);
 
         uint256 withdrawAmount = TOKEN_DEPOSIT_AMOUNT / 2;
         uint256 deadline = block.timestamp + 1 hours;
@@ -280,11 +280,11 @@ contract TapitalTest is Test, DeployPermit2 {
         uint256 balanceBefore = token.balanceOf(user);
 
         vm.prank(user);
-        tapital.withdraw(user, address(token), withdrawAmount, resolver1, deadline, signature);
+        signedVault.withdraw(user, address(token), withdrawAmount, resolver1, deadline, signature);
 
         assertEq(token.balanceOf(user), balanceBefore + withdrawAmount);
-        assertEq(tapital.resolverBalanceOf(resolver1, address(token)), TOKEN_DEPOSIT_AMOUNT - withdrawAmount);
-        assertTrue(tapital.usedSignatures(keccak256(signature)));
+        assertEq(signedVault.resolverBalanceOf(resolver1, address(token)), TOKEN_DEPOSIT_AMOUNT - withdrawAmount);
+        assertTrue(signedVault.usedSignatures(keccak256(signature)));
     }
 
     function testWithdrawInsufficientResolverBalance() public {
@@ -298,15 +298,15 @@ contract TapitalTest is Test, DeployPermit2 {
         vm.prank(user);
         vm.expectRevert(
             abi.encodeWithSelector(
-                Tapital.InsufficientResolverBalance.selector, resolver1, address(0), withdrawAmount, 0
+                SignedVault.InsufficientResolverBalance.selector, resolver1, address(0), withdrawAmount, 0
             )
         );
-        tapital.withdrawETH(user, withdrawAmount, resolver1, deadline, signature);
+        signedVault.withdrawETH(user, withdrawAmount, resolver1, deadline, signature);
     }
 
     function testWithdrawExpiredSignature() public {
         vm.prank(user);
-        tapital.depositETH{value: DEPOSIT_AMOUNT}(resolver1);
+        signedVault.depositETH{value: DEPOSIT_AMOUNT}(resolver1);
 
         uint256 withdrawAmount = DEPOSIT_AMOUNT / 2;
         uint256 deadline = block.timestamp - 1; // Expired
@@ -315,13 +315,13 @@ contract TapitalTest is Test, DeployPermit2 {
             createWithdrawSignature(user, address(0), withdrawAmount, resolver1, resolver1PrivateKey, deadline);
 
         vm.prank(user);
-        vm.expectRevert(Tapital.SignatureExpired.selector);
-        tapital.withdrawETH(user, withdrawAmount, resolver1, deadline, signature);
+        vm.expectRevert(SignedVault.SignatureExpired.selector);
+        signedVault.withdrawETH(user, withdrawAmount, resolver1, deadline, signature);
     }
 
     function testWithdrawSignatureReuse() public {
         vm.prank(user);
-        tapital.depositETH{value: DEPOSIT_AMOUNT}(resolver1);
+        signedVault.depositETH{value: DEPOSIT_AMOUNT}(resolver1);
 
         uint256 withdrawAmount = DEPOSIT_AMOUNT / 4;
         uint256 deadline = block.timestamp + 1 hours;
@@ -331,17 +331,17 @@ contract TapitalTest is Test, DeployPermit2 {
 
         // First withdrawal should succeed
         vm.prank(user);
-        tapital.withdrawETH(user, withdrawAmount, resolver1, deadline, signature);
+        signedVault.withdrawETH(user, withdrawAmount, resolver1, deadline, signature);
 
         // Second withdrawal with same signature should fail
         vm.prank(user);
-        vm.expectRevert(abi.encodeWithSelector(Tapital.SignatureAlreadyUsed.selector, keccak256(signature)));
-        tapital.withdrawETH(user, withdrawAmount, resolver1, deadline, signature);
+        vm.expectRevert(abi.encodeWithSelector(SignedVault.SignatureAlreadyUsed.selector, keccak256(signature)));
+        signedVault.withdrawETH(user, withdrawAmount, resolver1, deadline, signature);
     }
 
     function testWithdrawInvalidSignature() public {
         vm.prank(user);
-        tapital.depositETH{value: DEPOSIT_AMOUNT}(resolver1);
+        signedVault.depositETH{value: DEPOSIT_AMOUNT}(resolver1);
 
         uint256 withdrawAmount = DEPOSIT_AMOUNT / 2;
         uint256 deadline = block.timestamp + 1 hours;
@@ -351,8 +351,8 @@ contract TapitalTest is Test, DeployPermit2 {
             createWithdrawSignature(user, address(0), withdrawAmount, resolver1, resolver2PrivateKey, deadline);
 
         vm.prank(user);
-        vm.expectRevert(Tapital.InvalidSignature.selector);
-        tapital.withdrawETH(user, withdrawAmount, resolver1, deadline, wrongSignature);
+        vm.expectRevert(SignedVault.InvalidSignature.selector);
+        signedVault.withdrawETH(user, withdrawAmount, resolver1, deadline, wrongSignature);
     }
 
     // ============ RESOLVER TESTS ============
@@ -360,35 +360,35 @@ contract TapitalTest is Test, DeployPermit2 {
     function testMultipleResolvers() public {
         // Deposit with different resolvers
         vm.prank(user);
-        tapital.depositETH{value: DEPOSIT_AMOUNT}(resolver1);
+        signedVault.depositETH{value: DEPOSIT_AMOUNT}(resolver1);
 
         vm.prank(user);
-        token.approve(address(tapital), TOKEN_DEPOSIT_AMOUNT);
+        token.approve(address(signedVault), TOKEN_DEPOSIT_AMOUNT);
         vm.prank(user);
-        tapital.deposit(address(token), TOKEN_DEPOSIT_AMOUNT, resolver2);
+        signedVault.deposit(address(token), TOKEN_DEPOSIT_AMOUNT, resolver2);
 
         // Check balances
-        assertEq(tapital.resolverBalanceOf(resolver1, address(0)), DEPOSIT_AMOUNT);
-        assertEq(tapital.resolverBalanceOf(resolver2, address(token)), TOKEN_DEPOSIT_AMOUNT);
-        assertEq(tapital.resolverBalanceOf(resolver1, address(token)), 0);
-        assertEq(tapital.resolverBalanceOf(resolver2, address(0)), 0);
+        assertEq(signedVault.resolverBalanceOf(resolver1, address(0)), DEPOSIT_AMOUNT);
+        assertEq(signedVault.resolverBalanceOf(resolver2, address(token)), TOKEN_DEPOSIT_AMOUNT);
+        assertEq(signedVault.resolverBalanceOf(resolver1, address(token)), 0);
+        assertEq(signedVault.resolverBalanceOf(resolver2, address(0)), 0);
     }
 
     // ============ VIEW FUNCTION TESTS ============
 
     function testGetResolverBalance() public {
         vm.prank(user);
-        tapital.depositETH{value: DEPOSIT_AMOUNT}(resolver1);
+        signedVault.depositETH{value: DEPOSIT_AMOUNT}(resolver1);
 
         vm.prank(user);
-        token.approve(address(tapital), TOKEN_DEPOSIT_AMOUNT);
+        token.approve(address(signedVault), TOKEN_DEPOSIT_AMOUNT);
         vm.prank(user);
-        tapital.deposit(address(token), TOKEN_DEPOSIT_AMOUNT, resolver2);
+        signedVault.deposit(address(token), TOKEN_DEPOSIT_AMOUNT, resolver2);
 
         // Test resolver balance queries
-        assertEq(tapital.getResolverBalance(resolver1, address(0)), DEPOSIT_AMOUNT);
-        assertEq(tapital.getResolverBalance(resolver2, address(token)), TOKEN_DEPOSIT_AMOUNT);
-        assertEq(tapital.getResolverBalance(resolver1, address(token)), 0);
-        assertEq(tapital.getResolverBalance(resolver2, address(0)), 0);
+        assertEq(signedVault.getResolverBalance(resolver1, address(0)), DEPOSIT_AMOUNT);
+        assertEq(signedVault.getResolverBalance(resolver2, address(token)), TOKEN_DEPOSIT_AMOUNT);
+        assertEq(signedVault.getResolverBalance(resolver1, address(token)), 0);
+        assertEq(signedVault.getResolverBalance(resolver2, address(0)), 0);
     }
 }
