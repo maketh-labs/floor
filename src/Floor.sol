@@ -76,6 +76,7 @@ contract Floor is Initializable, ReentrancyGuardUpgradeable, EIP712Upgradeable, 
     mapping(address resolver => mapping(address token => uint256 balance)) public balanceOf;
 
     /// @notice Game status enum
+    // @review: Add None status with 0 value
     enum GameStatus {
         Active,
         Won,
@@ -84,7 +85,7 @@ contract Floor is Initializable, ReentrancyGuardUpgradeable, EIP712Upgradeable, 
 
     /// @notice Game data structure
     struct Game {
-        uint256 createdAt; // Block timestamp when game was created
+        uint256 createdAt; // Block timestamp when game was created // todo: pack
         address player; // Player's wallet address
         address resolver; // Resolver who will handle this game
         GameStatus status; // Current game status
@@ -97,6 +98,7 @@ contract Floor is Initializable, ReentrancyGuardUpgradeable, EIP712Upgradeable, 
         bytes32 gameConfig; // CID of game configuration JSON
         bytes32 gameState; // CID of final game state/player moves JSON
     }
+    // @review: Consider hashing the states and storing the hash instead of the state itself
 
     /// @notice Mapping from on-chain game ID to Game data
     mapping(uint256 id => Game game) public games;
@@ -182,6 +184,7 @@ contract Floor is Initializable, ReentrancyGuardUpgradeable, EIP712Upgradeable, 
         if (params.betAmount == 0) revert InvalidAmount(params.betAmount);
 
         if (usedNonces[params.nonce]) {
+            // @audit: DoS attack by front running
             revert NonceAlreadyUsed(params.nonce);
         }
 
@@ -198,6 +201,8 @@ contract Floor is Initializable, ReentrancyGuardUpgradeable, EIP712Upgradeable, 
 
         _createGame(params, resolver, msg.sender);
     }
+    // @audit: Player's funds could be locked when the resolver is not able to pay out, but this contract is designed to trust the resolver so it might not be a problem.
+    //         Should check with the team. One possible option is to add a function to cancel the game and refund the player.
 
     /**
      * @notice Creates a new game using Permit2 for gasless ERC20 approvals
@@ -289,7 +294,9 @@ contract Floor is Initializable, ReentrancyGuardUpgradeable, EIP712Upgradeable, 
         game.gameSeed = gameSeed;
 
         // Update balances - deduct from resolver, add bet amount to resolver (house edge)
+        // @review: If we change below two lines, we can increase the range of the payoutAmount. (If so, see also above if statement)
         balanceOf[game.resolver][game.token] -= payoutAmount;
+        // @review: Add balance at _createGame function
         balanceOf[game.resolver][game.token] += game.betAmount;
 
         // Transfer payout to player
@@ -302,6 +309,7 @@ contract Floor is Initializable, ReentrancyGuardUpgradeable, EIP712Upgradeable, 
             IERC20(game.token).safeTransfer(game.player, payoutAmount);
         }
 
+        // @review: Would be better to emit gameState and gameSeed also
         emit PayoutSent(id, game.resolver, game.token, payoutAmount, game.player);
     }
 
@@ -345,6 +353,7 @@ contract Floor is Initializable, ReentrancyGuardUpgradeable, EIP712Upgradeable, 
         // Add bet amount to resolver's balance (house keeps the bet)
         balanceOf[game.resolver][game.token] += game.betAmount;
 
+        // @review: Would be better to emit gameState and gameSeed also
         emit GameLost(id, game.resolver);
     }
 
@@ -417,6 +426,8 @@ contract Floor is Initializable, ReentrancyGuardUpgradeable, EIP712Upgradeable, 
     /**
      * @notice Receive function to accept direct ETH deposits (credited to sender as resolver)
      */
+    // @review: Why not use the depositETH function? The users might be confused and could mistake to send ERC20 tokens directly to this contract
+    // => Remove
     receive() external payable {
         balanceOf[msg.sender][ETH_ADDRESS] += msg.value;
         emit Deposit(msg.sender, ETH_ADDRESS, msg.value);
@@ -481,7 +492,7 @@ contract Floor is Initializable, ReentrancyGuardUpgradeable, EIP712Upgradeable, 
         usedNonces[params.nonce] = true;
 
         // Create game
-        count += 1;
+        count += 1; // @audit: gas opt
 
         games[count] = Game({
             player: player,
