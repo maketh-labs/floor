@@ -23,6 +23,7 @@ import {ISignatureTransfer} from "permit2/src/interfaces/ISignatureTransfer.sol"
  * - Resolver balance tracking to prevent over-withdrawals
  * - Decentralized resolver system (no global backend signer)
  */
+// @audit: It's better to use Ownable2StepUpgradeable instead of OwnableUpgradeable.
 contract SignedVault is
     Initializable,
     ReentrancyGuardUpgradeable,
@@ -222,6 +223,8 @@ contract SignedVault is
         if (resolver == address(0)) revert InvalidResolver();
 
         // Check if signature has been used before
+        // @review: It is allowed to use signatureHash as a unique identifier here because Solady removed the possibility of mutating the signature, but still, it is an anti-pattern.
+        // So I'm not going to mention it's an issue, but just remind this and double-check with the audit team.
         bytes32 signatureHash = keccak256(signature);
         if (usedSignatures[signatureHash]) revert SignatureAlreadyUsed(signatureHash);
 
@@ -261,6 +264,7 @@ contract SignedVault is
     /*                       VIEW FUNCTIONS                       */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
+    // @review: Remove this function or change resolverBalanceOf to internal/private.
     /**
      * @notice Get a resolver's balance for a specific token
      * @param resolver Resolver address
