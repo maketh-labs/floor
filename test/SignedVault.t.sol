@@ -139,7 +139,7 @@ contract SignedVaultTest is Test, DeployPermit2 {
 
     // ============ CONSTRUCTOR TESTS ============
 
-    function testConstructor() public {
+    function testConstructor() public view {
         assertEq(signedVault.owner(), owner);
         assertEq(address(signedVault.PERMIT2()), address(permit2));
         assertEq(signedVault.ETH_ADDRESS(), address(0));
@@ -202,7 +202,8 @@ contract SignedVaultTest is Test, DeployPermit2 {
             deadline: deadline
         });
 
-        bytes memory permitSignature = createPermit2Signature(address(token), amount, nonce, deadline, address(signedVault));
+        bytes memory permitSignature =
+            createPermit2Signature(address(token), amount, nonce, deadline, address(signedVault));
 
         vm.prank(user);
         signedVault.depositWithPermit2(resolver1, permit, permitSignature);
@@ -217,14 +218,6 @@ contract SignedVaultTest is Test, DeployPermit2 {
         uint256 nonce = 0;
         uint256 deadline = block.timestamp + 1 hours;
         uint256 amount = TOKEN_DEPOSIT_AMOUNT;
-
-        ISignatureTransfer.PermitTransferFrom memory permit = ISignatureTransfer.PermitTransferFrom({
-            permitted: ISignatureTransfer.TokenPermissions({token: address(token), amount: amount}),
-            nonce: nonce,
-            deadline: deadline
-        });
-
-        bytes memory permitSignature = createPermit2Signature(address(token), amount, nonce, deadline, address(signedVault));
 
         // Create permit for ETH address (invalid)
         ISignatureTransfer.PermitTransferFrom memory invalidPermit = ISignatureTransfer.PermitTransferFrom({

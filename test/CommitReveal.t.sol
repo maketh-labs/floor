@@ -161,7 +161,9 @@ contract CommitRevealTest is Test, DeployPermit2 {
             abi.encodePacked(
                 "\x19\x01",
                 domainSeparator,
-                keccak256(abi.encode(commitReveal.CASH_OUT_TYPEHASH(), gameId, payoutAmount, gameState, gameSeed, deadline))
+                keccak256(
+                    abi.encode(commitReveal.CASH_OUT_TYPEHASH(), gameId, payoutAmount, gameState, gameSeed, deadline)
+                )
             )
         );
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(resolverPrivateKey, messageHash);
@@ -187,12 +189,12 @@ contract CommitRevealTest is Test, DeployPermit2 {
 
     // ============ BASIC TESTS ============
 
-    function testConstructor() public {
+    function testConstructor() public view {
         // Test that the contract is properly initialized
         assertEq(commitReveal.ETH_ADDRESS(), address(0));
     }
 
-    function testConstants() public {
+    function testConstants() public view {
         // Test that all constants are properly set
         assertEq(commitReveal.ETH_ADDRESS(), address(0));
         assertNotEq(commitReveal.CREATE_GAME_TYPEHASH(), bytes32(0));
@@ -699,7 +701,10 @@ contract CommitRevealTest is Test, DeployPermit2 {
         vm.prank(resolver);
         vm.expectRevert(
             abi.encodeWithSelector(
-                CommitReveal.InsufficientContractBalance.selector, address(token), payoutAmount, depositAmount + betAmount
+                CommitReveal.InsufficientContractBalance.selector,
+                address(token),
+                payoutAmount,
+                depositAmount + betAmount
             )
         );
         commitReveal.cashOut(keccak256(signature), payoutAmount, bytes32("QmState"), keccak256("seed"), 0, "");
