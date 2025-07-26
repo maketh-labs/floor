@@ -23,7 +23,13 @@ import {ISignatureTransfer} from "permit2/src/interfaces/ISignatureTransfer.sol"
  * - Fully decentralized (no owner or admin)
  * - Permit2 integration for gasless ERC20 approvals
  */
-contract CommitReveal is Initializable, ReentrancyGuardUpgradeable, EIP712Upgradeable, UUPSUpgradeable, OwnableUpgradeable {
+contract CommitReveal is
+    Initializable,
+    ReentrancyGuardUpgradeable,
+    EIP712Upgradeable,
+    UUPSUpgradeable,
+    OwnableUpgradeable
+{
     using SafeERC20 for IERC20;
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
