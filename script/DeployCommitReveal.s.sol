@@ -7,37 +7,37 @@ import {CommitReveal} from "../src/CommitReveal.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract DeployCommitReveal is Script {
-    function run() external returns (address proxy, address implementation) {
-        address permit2 = vm.envAddress("PERMIT2");
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+    function prepare() public {
+        vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
+        CommitReveal implementation = new CommitReveal(vm.envAddress("PERMIT2"));
+        vm.stopBroadcast();
 
-        console.log("Deploying CommitReveal contract...");
-        console.log("Deployer address:", deployer);
+        console.log("CommitReveal implementation deployed at:", address(implementation));
+    }
 
-        vm.startBroadcast(deployerPrivateKey);
-
-        // Deploy the implementation contract
-        implementation = address(new CommitReveal(permit2));
-        console.log("CommitReveal implementation deployed at:", implementation);
-
-        // Prepare initialization data
-        bytes memory initData = abi.encodeWithSelector(
-            CommitReveal.initialize.selector,
-            deployer // owner address
-        );
+    function run(address payable implementation) public returns (address proxy) {
+        vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
 
         // Deploy the proxy contract
-        proxy = address(new ERC1967Proxy(implementation, initData));
-        console.log("CommitReveal proxy deployed at:", proxy);
+        proxy = address(
+            new ERC1967Proxy(
+                implementation,
+                abi.encodeWithSelector(
+                    CommitReveal.initialize.selector,
+                    vm.addr(vm.envUint("PRIVATE_KEY")) // owner address
+                )
+            )
+        );
 
         vm.stopBroadcast();
 
-        // Verify the deployment
-        CommitReveal floorProxy = CommitReveal(payable(proxy));
-        console.log("CommitReveal proxy owner:", floorProxy.owner());
-        console.log("CommitReveal proxy PERMIT2:", address(floorProxy.PERMIT2()));
+        console.log("CommitReveal proxy deployed at:", proxy);
 
-        return (proxy, implementation);
+        // Verify the deployment
+        CommitReveal commitRevealProxy = CommitReveal(payable(proxy));
+        console.log("CommitReveal proxy owner:", commitRevealProxy.owner());
+        console.log("CommitReveal proxy PERMIT2:", address(commitRevealProxy.PERMIT2()));
+
+        return proxy;
     }
 }

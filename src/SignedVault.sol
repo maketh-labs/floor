@@ -117,7 +117,7 @@ contract SignedVault is
 
         // Create deposit hash from user address and nonce
         bytes32 depositHash = keccak256(abi.encodePacked(msg.sender, nonce));
-        
+
         // Check for duplicate deposits
         if (deposits[depositHash] != 0) revert DuplicateDeposit(depositHash);
 
@@ -141,7 +141,7 @@ contract SignedVault is
 
         // Create deposit hash from user address and nonce
         bytes32 depositHash = keccak256(abi.encodePacked(msg.sender, nonce));
-        
+
         // Check for duplicate deposits
         if (deposits[depositHash] != 0) revert DuplicateDeposit(depositHash);
 
@@ -175,7 +175,7 @@ contract SignedVault is
 
         // Create deposit hash from user address and nonce
         bytes32 depositHash = keccak256(abi.encodePacked(msg.sender, nonce));
-        
+
         // Check for duplicate deposits
         if (deposits[depositHash] != 0) revert DuplicateDeposit(depositHash);
 

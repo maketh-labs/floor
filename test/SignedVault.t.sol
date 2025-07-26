@@ -153,11 +153,11 @@ contract SignedVaultTest is Test, DeployPermit2 {
     function testDepositETH() public {
         uint256 nonce = 1;
         bytes32 expectedHash = keccak256(abi.encodePacked(user, nonce));
-        
+
         // Expect the Deposit event with hash
         vm.expectEmit(true, true, true, true);
         emit Deposit(user, signedVault.ETH_ADDRESS(), DEPOSIT_AMOUNT, expectedHash);
-        
+
         vm.prank(user);
         signedVault.depositETH{value: DEPOSIT_AMOUNT}(resolver1, nonce);
 
@@ -165,7 +165,7 @@ contract SignedVaultTest is Test, DeployPermit2 {
         assertEq(address(signedVault).balance, DEPOSIT_AMOUNT);
         // Resolver1 should be credited with the deposit
         assertEq(signedVault.resolverBalanceOf(resolver1, signedVault.ETH_ADDRESS()), DEPOSIT_AMOUNT);
-        
+
         // Check deposit verification storage
         assertEq(signedVault.deposits(expectedHash), DEPOSIT_AMOUNT);
         assertEq(signedVault.getDepositByHash(user, nonce), DEPOSIT_AMOUNT);
@@ -180,11 +180,11 @@ contract SignedVaultTest is Test, DeployPermit2 {
 
     function testDepositETHDuplicate() public {
         uint256 nonce = 1;
-        
+
         // First deposit should succeed
         vm.prank(user);
         signedVault.depositETH{value: DEPOSIT_AMOUNT}(resolver1, nonce);
-        
+
         // Second deposit with same nonce should fail
         bytes32 expectedHash = keccak256(abi.encodePacked(user, nonce));
         vm.prank(user);
@@ -195,7 +195,7 @@ contract SignedVaultTest is Test, DeployPermit2 {
     function testDepositERC20() public {
         uint256 nonce = 1;
         bytes32 expectedHash = keccak256(abi.encodePacked(user, nonce));
-        
+
         vm.prank(user);
         token.approve(address(signedVault), TOKEN_DEPOSIT_AMOUNT);
 
@@ -210,7 +210,7 @@ contract SignedVaultTest is Test, DeployPermit2 {
         assertEq(token.balanceOf(address(signedVault)), TOKEN_DEPOSIT_AMOUNT);
         // Resolver1 should be credited with the deposit
         assertEq(signedVault.resolverBalanceOf(resolver1, address(token)), TOKEN_DEPOSIT_AMOUNT);
-        
+
         // Check deposit verification storage
         assertEq(signedVault.deposits(expectedHash), TOKEN_DEPOSIT_AMOUNT);
         assertEq(signedVault.getDepositByHash(user, nonce), TOKEN_DEPOSIT_AMOUNT);
@@ -232,13 +232,13 @@ contract SignedVaultTest is Test, DeployPermit2 {
 
     function testDepositERC20Duplicate() public {
         uint256 nonce = 1;
-        
+
         // First deposit should succeed
         vm.prank(user);
         token.approve(address(signedVault), TOKEN_DEPOSIT_AMOUNT * 2);
         vm.prank(user);
         signedVault.deposit(address(token), TOKEN_DEPOSIT_AMOUNT, resolver1, nonce);
-        
+
         // Second deposit with same nonce should fail
         bytes32 expectedHash = keccak256(abi.encodePacked(user, nonce));
         vm.prank(user);
@@ -276,7 +276,7 @@ contract SignedVaultTest is Test, DeployPermit2 {
         assertEq(token.balanceOf(address(signedVault)), amount);
         // Resolver1 should be credited with the deposit
         assertEq(signedVault.resolverBalanceOf(resolver1, address(token)), amount);
-        
+
         // Check deposit verification storage
         assertEq(signedVault.deposits(expectedHash), amount);
         assertEq(signedVault.getDepositByHash(user, userNonce), amount);
@@ -287,6 +287,15 @@ contract SignedVaultTest is Test, DeployPermit2 {
         uint256 userNonce = 1;
         uint256 deadline = block.timestamp + 1 hours;
         uint256 amount = TOKEN_DEPOSIT_AMOUNT;
+
+        ISignatureTransfer.PermitTransferFrom memory permit = ISignatureTransfer.PermitTransferFrom({
+            permitted: ISignatureTransfer.TokenPermissions({token: address(token), amount: amount}),
+            nonce: nonce,
+            deadline: deadline
+        });
+
+        bytes memory permitSignature =
+            createPermit2Signature(address(token), amount, nonce, deadline, address(signedVault));
 
         // Create permit for ETH address (invalid)
         ISignatureTransfer.PermitTransferFrom memory invalidPermit = ISignatureTransfer.PermitTransferFrom({
@@ -317,7 +326,8 @@ contract SignedVaultTest is Test, DeployPermit2 {
             deadline: deadline
         });
 
-        bytes memory permitSignature1 = createPermit2Signature(address(token), amount, nonce1, deadline, address(signedVault));
+        bytes memory permitSignature1 =
+            createPermit2Signature(address(token), amount, nonce1, deadline, address(signedVault));
 
         vm.prank(user);
         signedVault.depositWithPermit2(resolver1, permit1, permitSignature1, userNonce);
@@ -329,7 +339,8 @@ contract SignedVaultTest is Test, DeployPermit2 {
             deadline: deadline
         });
 
-        bytes memory permitSignature2 = createPermit2Signature(address(token), amount, nonce2, deadline, address(signedVault));
+        bytes memory permitSignature2 =
+            createPermit2Signature(address(token), amount, nonce2, deadline, address(signedVault));
 
         bytes32 expectedHash = keccak256(abi.encodePacked(user, userNonce));
         vm.prank(user);
@@ -462,7 +473,7 @@ contract SignedVaultTest is Test, DeployPermit2 {
         // Deposit with different resolvers
         uint256 nonce1 = 1;
         uint256 nonce2 = 2;
-        
+
         vm.prank(user);
         signedVault.depositETH{value: DEPOSIT_AMOUNT}(resolver1, nonce1);
 
@@ -483,7 +494,7 @@ contract SignedVaultTest is Test, DeployPermit2 {
     function testGetResolverBalance() public {
         uint256 nonce1 = 1;
         uint256 nonce2 = 2;
-        
+
         vm.prank(user);
         signedVault.depositETH{value: DEPOSIT_AMOUNT}(resolver1, nonce1);
 
@@ -511,47 +522,47 @@ contract SignedVaultTest is Test, DeployPermit2 {
     function testDifferentNoncesCreateDifferentHashes() public {
         uint256 nonce1 = 1;
         uint256 nonce2 = 2;
-        
+
         bytes32 hash1 = signedVault.createDepositHash(user, nonce1);
         bytes32 hash2 = signedVault.createDepositHash(user, nonce2);
-        
+
         assertTrue(hash1 != hash2);
     }
 
     function testSameUserSameNonceCreatesIdenticalHash() public {
         uint256 nonce = 42;
-        
+
         bytes32 hash1 = signedVault.createDepositHash(user, nonce);
         bytes32 hash2 = signedVault.createDepositHash(user, nonce);
-        
+
         assertEq(hash1, hash2);
     }
 
     function testDifferentUsersSameNonceCreateDifferentHashes() public {
         uint256 nonce = 1;
-        
+
         bytes32 userHash = signedVault.createDepositHash(user, nonce);
         bytes32 resolver1Hash = signedVault.createDepositHash(resolver1, nonce);
-        
+
         assertTrue(userHash != resolver1Hash);
     }
 
     function testDepositHashIndependenceAcrossUsers() public {
         uint256 nonce = 1;
-        
+
         // User deposits with nonce 1
         vm.prank(user);
         signedVault.depositETH{value: DEPOSIT_AMOUNT}(resolver1, nonce);
-        
+
         // Resolver1 can still use the same nonce for their own deposit
         vm.deal(resolver1, DEPOSIT_AMOUNT);
         vm.prank(resolver1);
         signedVault.depositETH{value: DEPOSIT_AMOUNT}(resolver2, nonce);
-        
+
         // Both deposits should be successful and tracked separately
         bytes32 userHash = signedVault.createDepositHash(user, nonce);
         bytes32 resolver1Hash = signedVault.createDepositHash(resolver1, nonce);
-        
+
         assertEq(signedVault.deposits(userHash), DEPOSIT_AMOUNT);
         assertEq(signedVault.deposits(resolver1Hash), DEPOSIT_AMOUNT);
         assertEq(signedVault.getDepositByHash(user, nonce), DEPOSIT_AMOUNT);
@@ -560,7 +571,7 @@ contract SignedVaultTest is Test, DeployPermit2 {
 
     function testGetDepositByHashNonExistent() public {
         uint256 nonce = 999;
-        
+
         // Should return 0 for non-existent deposit
         assertEq(signedVault.getDepositByHash(user, nonce), 0);
     }
@@ -570,18 +581,18 @@ contract SignedVaultTest is Test, DeployPermit2 {
         uint256 nonce2 = 2;
         uint256 amount1 = DEPOSIT_AMOUNT;
         uint256 amount2 = DEPOSIT_AMOUNT * 2;
-        
+
         // Make two different deposits with different nonces
         vm.prank(user);
         signedVault.depositETH{value: amount1}(resolver1, nonce1);
-        
+
         vm.prank(user);
         signedVault.depositETH{value: amount2}(resolver1, nonce2);
-        
+
         // Both should be tracked independently
         assertEq(signedVault.getDepositByHash(user, nonce1), amount1);
         assertEq(signedVault.getDepositByHash(user, nonce2), amount2);
-        
+
         // Resolver balance should be the sum
         assertEq(signedVault.resolverBalanceOf(resolver1, signedVault.ETH_ADDRESS()), amount1 + amount2);
     }
@@ -589,17 +600,17 @@ contract SignedVaultTest is Test, DeployPermit2 {
     function testMixedTokenDepositsWithDifferentNonces() public {
         uint256 ethNonce = 1;
         uint256 tokenNonce = 2;
-        
+
         // ETH deposit
         vm.prank(user);
         signedVault.depositETH{value: DEPOSIT_AMOUNT}(resolver1, ethNonce);
-        
+
         // Token deposit
         vm.prank(user);
         token.approve(address(signedVault), TOKEN_DEPOSIT_AMOUNT);
         vm.prank(user);
         signedVault.deposit(address(token), TOKEN_DEPOSIT_AMOUNT, resolver1, tokenNonce);
-        
+
         // Both should be tracked independently
         assertEq(signedVault.getDepositByHash(user, ethNonce), DEPOSIT_AMOUNT);
         assertEq(signedVault.getDepositByHash(user, tokenNonce), TOKEN_DEPOSIT_AMOUNT);
