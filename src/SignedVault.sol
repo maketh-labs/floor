@@ -61,7 +61,7 @@ contract SignedVault is
     mapping(bytes32 depositHash => uint256 amount) public deposits;
 
     // @notice Reserved slots for upgradeability
-    uint256[49] private __gap; // 49 reserved slots (reduced by 1 for new mapping)
+    uint256[50] private __gap; // 50 reserved slots
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                           EVENTS                           */

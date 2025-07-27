@@ -630,7 +630,7 @@ contract SignedVaultTest is Test, DeployPermit2 {
         // Create the signature to be cancelled
         bytes memory signature =
             createWithdrawSignature(user, address(0), withdrawAmount, resolver1, resolver1PrivateKey, deadline);
-        
+
         bytes32 signatureHash = keccak256(signature);
 
         // Expect the SignatureCancelled event

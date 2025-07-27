@@ -77,6 +77,9 @@ contract CommitReveal is
     /// @notice Mapping of resolver balances by token
     mapping(address resolver => mapping(address token => uint256 balance)) public balanceOf;
 
+    // @notice Reserved slots for upgradeability
+    uint256[50] private __gap; // 50 reserved slots
+
     /// @notice Game status enum
     enum GameStatus {
         None, // Default state (0) - game doesn't exist
@@ -99,6 +102,7 @@ contract CommitReveal is
         bytes32 algorithm; // IPFS CID (as bytes32) pointing to the deterministic algorithm
         bytes32 gameConfig; // CID of game configuration JSON
         bytes32 gameState; // CID of final game state/player moves JSON
+        bytes32 salt; // User-provided entropy to prevent seed premining
     }
 
     /// @notice Mapping from game signature hash to Game data
@@ -110,7 +114,13 @@ contract CommitReveal is
 
     /// @notice Emitted when a new game is created
     event GameCreated(
-        bytes32 gameId, address player, address resolver, address token, uint256 betAmount, bytes32 gameSeedHash
+        bytes32 gameId,
+        address player,
+        address resolver,
+        address token,
+        uint256 betAmount,
+        bytes32 gameSeedHash,
+        bytes32 salt
     );
 
     /// @notice Emitted when a payout is sent to a player
@@ -175,8 +185,9 @@ contract CommitReveal is
      * @notice Creates a new game. Supports both ETH and ERC20 tokens.
      * @param params Game creation parameters grouped in a struct
      * @param serverSignature Signature from the server authorizing this game creation
+     * @param salt User-provided entropy to prevent seed premining (not part of server signature)
      */
-    function createGame(CreateGameParams calldata params, bytes calldata serverSignature)
+    function createGame(CreateGameParams calldata params, bytes calldata serverSignature, bytes32 salt)
         external
         payable
         nonReentrant
@@ -202,7 +213,7 @@ contract CommitReveal is
             IERC20(params.token).safeTransferFrom(msg.sender, address(this), params.betAmount);
         }
 
-        _createGame(params, resolver, msg.sender, gameId);
+        _createGame(params, resolver, msg.sender, gameId, salt);
     }
     // @audit: Player's funds could be locked when the resolver is not able to pay out, but this contract is designed to trust the resolver so it might not be a problem.
     //         Should check with the team. One possible option is to add a function to cancel the game and refund the player.
@@ -211,6 +222,7 @@ contract CommitReveal is
      * @notice Creates a new game using Permit2 for gasless ERC20 approvals
      * @param params Game creation parameters grouped in a struct
      * @param serverSignature Signature from the server authorizing this game creation
+     * @param salt User-provided entropy to prevent seed premining (not part of server signature)
      * @param permit Permit2 permit data signed by the player
      * @param transferDetails Details of the token transfer (to, requestedAmount)
      * @param permitSignature Player's signature for the Permit2 transfer
@@ -218,6 +230,7 @@ contract CommitReveal is
     function createGameWithPermit2(
         CreateGameParams calldata params,
         bytes calldata serverSignature,
+        bytes32 salt,
         ISignatureTransfer.PermitTransferFrom memory permit,
         ISignatureTransfer.SignatureTransferDetails calldata transferDetails,
         bytes calldata permitSignature
@@ -248,7 +261,7 @@ contract CommitReveal is
         // Transfer tokens using Permit2
         PERMIT2.permitTransferFrom(permit, transferDetails, msg.sender, permitSignature);
 
-        _createGame(params, resolver, msg.sender, gameId);
+        _createGame(params, resolver, msg.sender, gameId, salt);
     }
 
     /**
@@ -470,8 +483,15 @@ contract CommitReveal is
      * @param resolver The address of the resolver who created the game.
      * @param player The address of the player creating the game.
      * @param gameId The unique game ID derived from signature hash.
+     * @param salt User-provided entropy to prevent seed premining.
      */
-    function _createGame(CreateGameParams calldata params, address resolver, address player, bytes32 gameId) internal {
+    function _createGame(
+        CreateGameParams calldata params,
+        address resolver,
+        address player,
+        bytes32 gameId,
+        bytes32 salt
+    ) internal {
         // Mark signature hash as used
         usedSignatures[gameId] = true;
 
@@ -490,9 +510,10 @@ contract CommitReveal is
             gameSeed: bytes32(0),
             algorithm: params.algorithm,
             gameConfig: params.gameConfig,
-            gameState: bytes32(0)
+            gameState: bytes32(0),
+            salt: salt // Store the salt
         });
-        emit GameCreated(gameId, player, resolver, params.token, params.betAmount, params.gameSeedHash);
+        emit GameCreated(gameId, player, resolver, params.token, params.betAmount, params.gameSeedHash, salt);
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -500,11 +521,4 @@ contract CommitReveal is
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
-
-    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-    /*                        STORAGE GAP                         */
-    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
-
-    // @notice Reserved slots for upgradeability
-    uint256[50] private __gap; // 50 reserved slots
 }

@@ -26,6 +26,7 @@ contract CommitRevealTest is Test, DeployPermit2 {
     bytes32 public constant GAME_SEED_HASH = keccak256("test_seed");
     bytes32 public constant ALGORITHM = bytes32("QmTestAlgorithm");
     bytes32 public constant GAME_CONFIG = bytes32("QmTestGameConfig");
+    bytes32 public constant SALT = keccak256("user_entropy_salt");
 
     // EIP712 domain separator for testing
     bytes32 public domainSeparator;
@@ -278,7 +279,7 @@ contract CommitRevealTest is Test, DeployPermit2 {
         bytes memory signature = createGameSignature(params, player);
 
         vm.prank(player);
-        commitReveal.createGame{value: BET_AMOUNT}(params, signature);
+        commitReveal.createGame{value: BET_AMOUNT}(params, signature, SALT);
 
         // Verify game was created correctly
         assertTrue(commitReveal.usedSignatures(keccak256(signature)));
@@ -317,7 +318,7 @@ contract CommitRevealTest is Test, DeployPermit2 {
             createPermit2Signature(address(token), betAmount, permit2Nonce, deadline, address(commitReveal));
 
         vm.prank(player);
-        commitReveal.createGameWithPermit2(params, signature, permit, transferDetails, permitSignature);
+        commitReveal.createGameWithPermit2(params, signature, SALT, permit, transferDetails, permitSignature);
 
         // Verify game was created correctly
         assertTrue(commitReveal.usedSignatures(keccak256(signature)));
@@ -365,7 +366,7 @@ contract CommitRevealTest is Test, DeployPermit2 {
 
         vm.prank(player);
         vm.expectRevert(CommitReveal.TokenMismatch.selector);
-        commitReveal.createGameWithPermit2(params, signature, permit, transferDetails, permitSignature);
+        commitReveal.createGameWithPermit2(params, signature, SALT, permit, transferDetails, permitSignature);
     }
 
     function testCreateGameWithPermit2InsufficientAmount() public {
@@ -404,7 +405,7 @@ contract CommitRevealTest is Test, DeployPermit2 {
 
         vm.prank(player);
         vm.expectRevert(CommitReveal.InsufficientPermitAmount.selector);
-        commitReveal.createGameWithPermit2(params, signature, permit, transferDetails, permitSignature);
+        commitReveal.createGameWithPermit2(params, signature, SALT, permit, transferDetails, permitSignature);
     }
 
     function testCreateGameWithPermit2ExpiredDeadline() public {
@@ -442,7 +443,7 @@ contract CommitRevealTest is Test, DeployPermit2 {
 
         vm.prank(player);
         vm.expectRevert(CommitReveal.SignatureExpired.selector);
-        commitReveal.createGameWithPermit2(params, signature, permit, transferDetails, permitSignature);
+        commitReveal.createGameWithPermit2(params, signature, SALT, permit, transferDetails, permitSignature);
     }
 
     function testCreateGameWithPermit2NonceReuse() public {
@@ -477,12 +478,12 @@ contract CommitRevealTest is Test, DeployPermit2 {
 
         // First call should succeed
         vm.prank(player);
-        commitReveal.createGameWithPermit2(params, signature, permit, transferDetails, permitSignature);
+        commitReveal.createGameWithPermit2(params, signature, SALT, permit, transferDetails, permitSignature);
 
         // Second call with same nonce should fail
         vm.prank(player);
         vm.expectRevert(abi.encodeWithSelector(CommitReveal.SignatureAlreadyUsed.selector, keccak256(signature)));
-        commitReveal.createGameWithPermit2(params, signature, permit, transferDetails, permitSignature);
+        commitReveal.createGameWithPermit2(params, signature, SALT, permit, transferDetails, permitSignature);
     }
 
     function testCreateGameWithPermit2InvalidTransferDestination() public {
@@ -524,7 +525,7 @@ contract CommitRevealTest is Test, DeployPermit2 {
 
         vm.prank(player);
         vm.expectRevert(CommitReveal.InvalidPermitTransfer.selector);
-        commitReveal.createGameWithPermit2(params, signature, permit, transferDetails, permitSignature);
+        commitReveal.createGameWithPermit2(params, signature, SALT, permit, transferDetails, permitSignature);
     }
 
     function testCreateGameWithPermit2InvalidRequestedAmount() public {
@@ -565,7 +566,7 @@ contract CommitRevealTest is Test, DeployPermit2 {
 
         vm.prank(player);
         vm.expectRevert(abi.encodeWithSelector(CommitReveal.InvalidAmount.selector, wrongAmount));
-        commitReveal.createGameWithPermit2(params, signature, permit, transferDetails, permitSignature);
+        commitReveal.createGameWithPermit2(params, signature, SALT, permit, transferDetails, permitSignature);
     }
 
     function testCreateGameETHNonceReuse() public {
@@ -583,11 +584,11 @@ contract CommitRevealTest is Test, DeployPermit2 {
         bytes memory signature = createGameSignature(params, player);
 
         vm.prank(player);
-        commitReveal.createGame{value: BET_AMOUNT}(params, signature);
+        commitReveal.createGame{value: BET_AMOUNT}(params, signature, SALT);
 
         vm.prank(player);
         vm.expectRevert(abi.encodeWithSelector(CommitReveal.SignatureAlreadyUsed.selector, keccak256(signature)));
-        commitReveal.createGame{value: BET_AMOUNT}(params, signature);
+        commitReveal.createGame{value: BET_AMOUNT}(params, signature, SALT);
     }
 
     function testCashOutByResolver() public {
@@ -614,7 +615,7 @@ contract CommitRevealTest is Test, DeployPermit2 {
         vm.prank(player);
         token.approve(address(commitReveal), betAmount);
         vm.prank(player);
-        commitReveal.createGame(params, signature);
+        commitReveal.createGame(params, signature, SALT);
 
         uint256 payoutAmount = 50 * 10 ** 18;
         bytes32 gameState = bytes32("QmState");
@@ -652,7 +653,7 @@ contract CommitRevealTest is Test, DeployPermit2 {
         vm.prank(player);
         token.approve(address(commitReveal), betAmount);
         vm.prank(player);
-        commitReveal.createGame(params, signature);
+        commitReveal.createGame(params, signature, SALT);
 
         uint256 payoutAmount = 60 * 10 ** 18;
         bytes32 gameState = bytes32("QmState");
@@ -694,7 +695,7 @@ contract CommitRevealTest is Test, DeployPermit2 {
         vm.prank(player);
         token.approve(address(commitReveal), betAmount);
         vm.prank(player);
-        commitReveal.createGame(params, signature);
+        commitReveal.createGame(params, signature, SALT);
 
         uint256 payoutAmount = 20 * 10 ** 18;
 
@@ -734,7 +735,7 @@ contract CommitRevealTest is Test, DeployPermit2 {
         vm.prank(player);
         token.approve(address(commitReveal), betAmount);
         vm.prank(player);
-        commitReveal.createGame(params, signature);
+        commitReveal.createGame(params, signature, SALT);
 
         bytes32 gameState = bytes32("QmLost");
         bytes32 gameSeed = keccak256("lost");
@@ -769,7 +770,7 @@ contract CommitRevealTest is Test, DeployPermit2 {
         vm.prank(player);
         token.approve(address(commitReveal), betAmount);
         vm.prank(player);
-        commitReveal.createGame(params, signature);
+        commitReveal.createGame(params, signature, SALT);
 
         bytes32 gameState = bytes32("QmLost");
         bytes32 gameSeed = keccak256("lost2");
