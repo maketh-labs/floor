@@ -73,6 +73,9 @@ contract SignedVault is
     /// @notice Emitted when a user withdraws funds
     event Withdraw(address user, address token, uint256 amount);
 
+    /// @notice Emitted when a resolver cancels a signature
+    event SignatureCancelled(address resolver, bytes signature);
+
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                           ERRORS                           */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
@@ -194,6 +197,23 @@ contract SignedVault is
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                    SIGNATURE MANAGEMENT                    */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    /**
+     * @notice Cancel a signature to prevent its future use
+     * @dev Anyone can cancel any signature by providing it
+     * @param signature The signature to cancel
+     */
+    function cancelSignature(bytes calldata signature) external {
+        // Mark the signature hash as used to prevent its future use
+        bytes32 signatureHash = keccak256(signature);
+        usedSignatures[signatureHash] = true;
+
+        emit SignatureCancelled(msg.sender, signature);
+    }
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                    WITHDRAWAL FUNCTIONS                    */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
@@ -258,7 +278,11 @@ contract SignedVault is
         if (amount == 0) revert InvalidAmount(amount);
         if (resolver == address(0)) revert InvalidResolver();
 
-        // Check if signature has been used before
+        // Verify resolver signature
+        bytes32 messageHash =
+            _hashTypedDataV4(keccak256(abi.encode(WITHDRAW_TYPEHASH, user, token, amount, resolver, deadline)));
+
+        // Check if signature has been used before (includes cancelled signatures)
         bytes32 signatureHash = keccak256(signature);
         if (usedSignatures[signatureHash]) revert SignatureAlreadyUsed(signatureHash);
 
@@ -267,10 +291,6 @@ contract SignedVault is
         if (resolverBalance < amount) {
             revert InsufficientResolverBalance(resolver, token, amount, resolverBalance);
         }
-
-        // Verify resolver signature
-        bytes32 messageHash =
-            _hashTypedDataV4(keccak256(abi.encode(WITHDRAW_TYPEHASH, user, token, amount, resolver, deadline)));
 
         address recoveredSigner = ECDSA.recover(messageHash, signature);
         if (recoveredSigner == address(0) || recoveredSigner != resolver) {

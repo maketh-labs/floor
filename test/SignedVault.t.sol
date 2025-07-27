@@ -43,6 +43,7 @@ contract SignedVaultTest is Test, DeployPermit2 {
 
     // Events to test
     event Deposit(address user, address token, uint256 amount, uint256 nonce);
+    event SignatureCancelled(address resolver, bytes signature);
 
     function setUp() public {
         // Deploy actual Permit2 contract
@@ -614,5 +615,142 @@ contract SignedVaultTest is Test, DeployPermit2 {
         // Both should be tracked independently
         assertEq(signedVault.getDepositByHash(user, ethNonce), DEPOSIT_AMOUNT);
         assertEq(signedVault.getDepositByHash(user, tokenNonce), TOKEN_DEPOSIT_AMOUNT);
+    }
+
+    // ============ SIGNATURE CANCELLATION TESTS ============
+
+    function testCancelSignature() public {
+        uint256 nonce = 1;
+        vm.prank(user);
+        signedVault.depositETH{value: DEPOSIT_AMOUNT}(resolver1, nonce);
+
+        uint256 withdrawAmount = DEPOSIT_AMOUNT / 2;
+        uint256 deadline = block.timestamp + 1 hours;
+
+        // Create the signature to be cancelled
+        bytes memory signature =
+            createWithdrawSignature(user, address(0), withdrawAmount, resolver1, resolver1PrivateKey, deadline);
+        
+        bytes32 signatureHash = keccak256(signature);
+
+        // Expect the SignatureCancelled event
+        vm.expectEmit(true, true, true, true);
+        emit SignatureCancelled(resolver1, signature);
+
+        // Resolver cancels the signature
+        vm.prank(resolver1);
+        signedVault.cancelSignature(signature);
+
+        // Check that signature hash is marked as used (cancelled)
+        assertTrue(signedVault.usedSignatures(signatureHash));
+    }
+
+    function testCancelledSignaturePreventsWithdrawal() public {
+        uint256 nonce = 1;
+        vm.prank(user);
+        signedVault.depositETH{value: DEPOSIT_AMOUNT}(resolver1, nonce);
+
+        uint256 withdrawAmount = DEPOSIT_AMOUNT / 2;
+        uint256 deadline = block.timestamp + 1 hours;
+
+        // Create signature
+        bytes memory signature =
+            createWithdrawSignature(user, address(0), withdrawAmount, resolver1, resolver1PrivateKey, deadline);
+
+        // Resolver cancels the signature first
+        vm.prank(resolver1);
+        signedVault.cancelSignature(signature);
+
+        // Withdrawal should fail with SignatureAlreadyUsed error
+        vm.prank(user);
+        vm.expectRevert(abi.encodeWithSelector(SignedVault.SignatureAlreadyUsed.selector, keccak256(signature)));
+        signedVault.withdrawETH(user, withdrawAmount, resolver1, deadline, signature);
+    }
+
+    function testAnyoneCanCancelAnySignature() public {
+        uint256 nonce = 1;
+        vm.prank(user);
+        signedVault.depositETH{value: DEPOSIT_AMOUNT}(resolver1, nonce);
+
+        uint256 withdrawAmount = DEPOSIT_AMOUNT / 2;
+        uint256 deadline = block.timestamp + 1 hours;
+
+        // Create signature
+        bytes memory signature =
+            createWithdrawSignature(user, address(0), withdrawAmount, resolver1, resolver1PrivateKey, deadline);
+
+        bytes32 signatureHash = keccak256(signature);
+
+        // User cancels resolver1's signature (this should work now)
+        vm.expectEmit(true, true, true, true);
+        emit SignatureCancelled(user, signature);
+
+        vm.prank(user);
+        signedVault.cancelSignature(signature);
+
+        // Check that signature is marked as used
+        assertTrue(signedVault.usedSignatures(signatureHash));
+
+        // Withdrawal should fail even though resolver1 created the signature
+        vm.prank(user);
+        vm.expectRevert(abi.encodeWithSelector(SignedVault.SignatureAlreadyUsed.selector, signatureHash));
+        signedVault.withdrawETH(user, withdrawAmount, resolver1, deadline, signature);
+    }
+
+    function testCancelSignatureForERC20() public {
+        uint256 nonce = 1;
+        vm.prank(user);
+        token.approve(address(signedVault), TOKEN_DEPOSIT_AMOUNT);
+        vm.prank(user);
+        signedVault.deposit(address(token), TOKEN_DEPOSIT_AMOUNT, resolver1, nonce);
+
+        uint256 withdrawAmount = TOKEN_DEPOSIT_AMOUNT / 2;
+        uint256 deadline = block.timestamp + 1 hours;
+
+        // Create signature
+        bytes memory signature =
+            createWithdrawSignature(user, address(token), withdrawAmount, resolver1, resolver1PrivateKey, deadline);
+
+        bytes32 signatureHash = keccak256(signature);
+
+        // Cancel the signature
+        vm.prank(resolver1);
+        signedVault.cancelSignature(signature);
+
+        // Check that signature hash is marked as used (cancelled)
+        assertTrue(signedVault.usedSignatures(signatureHash));
+
+        // Try to withdraw with cancelled signature
+        vm.prank(user);
+        vm.expectRevert(abi.encodeWithSelector(SignedVault.SignatureAlreadyUsed.selector, signatureHash));
+        signedVault.withdraw(user, address(token), withdrawAmount, resolver1, deadline, signature);
+    }
+
+    function testCancelSignatureAfterUse() public {
+        uint256 nonce = 1;
+        vm.prank(user);
+        signedVault.depositETH{value: DEPOSIT_AMOUNT}(resolver1, nonce);
+
+        uint256 withdrawAmount = DEPOSIT_AMOUNT / 2;
+        uint256 deadline = block.timestamp + 1 hours;
+
+        // Create and use signature first
+        bytes memory signature =
+            createWithdrawSignature(user, address(0), withdrawAmount, resolver1, resolver1PrivateKey, deadline);
+
+        vm.prank(user);
+        signedVault.withdrawETH(user, withdrawAmount, resolver1, deadline, signature);
+
+        bytes32 signatureHash = keccak256(signature);
+
+        // Signature should already be marked as used
+        assertTrue(signedVault.usedSignatures(signatureHash));
+
+        // Now try to cancel the already-used signature (should not revert)
+        vm.prank(resolver1);
+        signedVault.cancelSignature(signature);
+
+        // Signature should still be marked as used
+        assertTrue(signedVault.usedSignatures(signatureHash));
     }
 }
