@@ -42,7 +42,7 @@ contract SignedVaultTest is Test, DeployPermit2 {
     );
 
     // Events to test
-    event Deposit(address user, address token, uint256 amount, bytes32 depositHash);
+    event Deposit(address user, address token, uint256 amount, uint256 nonce);
 
     function setUp() public {
         // Deploy actual Permit2 contract
@@ -154,9 +154,9 @@ contract SignedVaultTest is Test, DeployPermit2 {
         uint256 nonce = 1;
         bytes32 expectedHash = keccak256(abi.encodePacked(user, nonce));
 
-        // Expect the Deposit event with hash
+        // Expect the Deposit event with nonce
         vm.expectEmit(true, true, true, true);
-        emit Deposit(user, signedVault.ETH_ADDRESS(), DEPOSIT_AMOUNT, expectedHash);
+        emit Deposit(user, signedVault.ETH_ADDRESS(), DEPOSIT_AMOUNT, nonce);
 
         vm.prank(user);
         signedVault.depositETH{value: DEPOSIT_AMOUNT}(resolver1, nonce);
@@ -199,9 +199,9 @@ contract SignedVaultTest is Test, DeployPermit2 {
         vm.prank(user);
         token.approve(address(signedVault), TOKEN_DEPOSIT_AMOUNT);
 
-        // Expect the Deposit event with hash
+        // Expect the Deposit event with nonce
         vm.expectEmit(true, true, true, true);
-        emit Deposit(user, address(token), TOKEN_DEPOSIT_AMOUNT, expectedHash);
+        emit Deposit(user, address(token), TOKEN_DEPOSIT_AMOUNT, nonce);
 
         vm.prank(user);
         signedVault.deposit(address(token), TOKEN_DEPOSIT_AMOUNT, resolver1, nonce);
@@ -265,9 +265,9 @@ contract SignedVaultTest is Test, DeployPermit2 {
         bytes memory permitSignature =
             createPermit2Signature(address(token), amount, nonce, deadline, address(signedVault));
 
-        // Expect the Deposit event with hash
+        // Expect the Deposit event with nonce
         vm.expectEmit(true, true, true, true);
-        emit Deposit(user, address(token), amount, expectedHash);
+        emit Deposit(user, address(token), amount, userNonce);
 
         vm.prank(user);
         signedVault.depositWithPermit2(resolver1, permit, permitSignature, userNonce);
