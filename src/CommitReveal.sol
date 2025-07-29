@@ -23,6 +23,7 @@ import {ISignatureTransfer} from "permit2/src/interfaces/ISignatureTransfer.sol"
  * - Fully decentralized (no owner or admin)
  * - Permit2 integration for gasless ERC20 approvals
  */
+// @audit: It's better to use Ownable2StepUpgradeable instead of OwnableUpgradeable.
 contract CommitReveal is
     Initializable,
     ReentrancyGuardUpgradeable,
@@ -102,16 +103,20 @@ contract CommitReveal is
         bytes32 algorithm; // IPFS CID (as bytes32) pointing to the deterministic algorithm
         bytes32 gameConfig; // CID of game configuration JSON
         bytes32 gameState; // CID of final game state/player moves JSON
+        // @audit: It doesn't seem to prevent seed premining. The salt is not used for any kinds of validation.
         bytes32 salt; // User-provided entropy to prevent seed premining
     }
 
     /// @notice Mapping from game signature hash to Game data
+    // @review: It's better to define struct storage as an internal/private variable and use a getter function to access it.
+    // That makes easier to use the getter function in other contracts.
     mapping(bytes32 signatureHash => Game game) public games;
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                           EVENTS                           */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
+    // @review: Consider adding indexed prefix at the event parameters. ex) gameId
     /// @notice Emitted when a new game is created
     event GameCreated(
         bytes32 gameId,
@@ -311,7 +316,9 @@ contract CommitReveal is
         game.gameSeed = gameSeed;
 
         // Update balances - deduct payout from resolver (bet amount already added at game creation)
-        balanceOf[game.resolver][game.token] -= payoutAmount;
+        unchecked {
+            balanceOf[game.resolver][game.token] -= payoutAmount;
+        }
 
         // Transfer payout to player
         if (game.token == ETH_ADDRESS) {
@@ -375,9 +382,13 @@ contract CommitReveal is
     /**
      * @notice Deposit ETH as a resolver to provide liquidity for games
      */
+    // @review: These deposit functions can be re-entrant, but there are no attack vectors.
+    // Maybe it would be better to add a re-entrancy guard preparing the unknown future changes.
     function depositETH() external payable {
         if (msg.value == 0) revert InvalidAmount(msg.value);
-        balanceOf[msg.sender][ETH_ADDRESS] += msg.value;
+        unchecked {
+            balanceOf[msg.sender][ETH_ADDRESS] += msg.value;
+        }
         emit Deposit(msg.sender, ETH_ADDRESS, msg.value);
     }
 
@@ -393,6 +404,7 @@ contract CommitReveal is
         balanceOf[msg.sender][token] += amount;
         emit Deposit(msg.sender, token, amount);
     }
+    // @review: Adding depositWithPermit2? but not that necessary.
 
     /**
      * @notice Withdraw ETH from resolver balance
@@ -404,7 +416,9 @@ contract CommitReveal is
             revert InsufficientContractBalance(ETH_ADDRESS, amount, balanceOf[msg.sender][ETH_ADDRESS]);
         }
 
-        balanceOf[msg.sender][ETH_ADDRESS] -= amount;
+        unchecked {
+            balanceOf[msg.sender][ETH_ADDRESS] -= amount;
+        }
 
         (bool success,) = payable(msg.sender).call{value: amount}("");
         if (!success) revert ETHTransferFailed();
@@ -424,7 +438,9 @@ contract CommitReveal is
             revert InsufficientContractBalance(token, amount, balanceOf[msg.sender][token]);
         }
 
-        balanceOf[msg.sender][token] -= amount;
+        unchecked {
+            balanceOf[msg.sender][token] -= amount;
+        }
         IERC20(token).safeTransfer(msg.sender, amount);
 
         emit Withdraw(msg.sender, token, amount);

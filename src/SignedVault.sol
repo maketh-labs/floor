@@ -23,6 +23,7 @@ import {ISignatureTransfer} from "permit2/src/interfaces/ISignatureTransfer.sol"
  * - Resolver balance tracking to prevent over-withdrawals
  * - Decentralized resolver system (no global backend signer)
  */
+// @audit: It's better to use Ownable2StepUpgradeable instead of OwnableUpgradeable.
 contract SignedVault is
     Initializable,
     ReentrancyGuardUpgradeable,
@@ -58,6 +59,7 @@ contract SignedVault is
 
     /// @notice Mapping to track deposits by hash for backend verification
     /// @dev Hash is created from keccak256(abi.encodePacked(user, nonce))
+    // @review: There's no need to expose depositHash, consider using mapping(address user => mapping(uint256 nonce => uint256 amount)) instead.
     mapping(bytes32 depositHash => uint256 amount) public deposits;
 
     // @notice Reserved slots for upgradeability
@@ -88,6 +90,8 @@ contract SignedVault is
     error SignatureExpired();
     error ETHTransferFailed();
     error InvalidResolver();
+    // @review: Consider reverting with address and nonce instead of depositHash.
+    // It's better to unify the form of parameters.
     error DuplicateDeposit(bytes32 depositHash);
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -127,7 +131,10 @@ contract SignedVault is
         // Store deposit for backend verification
         deposits[depositHash] = msg.value;
 
-        resolverBalanceOf[resolver][ETH_ADDRESS] += msg.value;
+        unchecked {
+            resolverBalanceOf[resolver][ETH_ADDRESS] += msg.value;
+        }
+
         emit Deposit(msg.sender, ETH_ADDRESS, msg.value, nonce);
     }
 
@@ -205,6 +212,7 @@ contract SignedVault is
      * @dev Anyone can cancel any signature by providing it
      * @param signature The signature to cancel
      */
+    // @audit: Anyone can cancel any signatures. Could be used to DoS by front running.
     function cancelSignature(bytes calldata signature) external {
         // Mark the signature hash as used to prevent its future use
         bytes32 signatureHash = keccak256(signature);
@@ -283,6 +291,8 @@ contract SignedVault is
             _hashTypedDataV4(keccak256(abi.encode(WITHDRAW_TYPEHASH, user, token, amount, resolver, deadline)));
 
         // Check if signature has been used before (includes cancelled signatures)
+        // @review: It is allowed to use signatureHash as a unique identifier here because Solady removed the possibility of mutating the signature, but still, it is an anti-pattern.
+        // So I'm not going to mention it's an issue, but just remind this and double-check with the audit team.
         bytes32 signatureHash = keccak256(signature);
         if (usedSignatures[signatureHash]) revert SignatureAlreadyUsed(signatureHash);
 
@@ -301,7 +311,9 @@ contract SignedVault is
         usedSignatures[signatureHash] = true;
 
         // Deduct from resolver's balance
-        resolverBalanceOf[resolver][token] -= amount;
+        unchecked {
+            resolverBalanceOf[resolver][token] -= amount;
+        }
 
         // Transfer assets
         if (token == ETH_ADDRESS) {
@@ -318,6 +330,7 @@ contract SignedVault is
     /*                       VIEW FUNCTIONS                       */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
+    // @review: Remove this function or change resolverBalanceOf to internal/private.
     /**
      * @notice Get a resolver's balance for a specific token
      * @param resolver Resolver address
@@ -328,6 +341,7 @@ contract SignedVault is
         return resolverBalanceOf[resolver][token];
     }
 
+    // @review: Remove this function or change deposits to internal/private.
     /**
      * @notice Get deposit amount by hash for backend verification
      * @param user User address
