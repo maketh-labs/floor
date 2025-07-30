@@ -3,7 +3,7 @@ pragma solidity ^0.8.30;
 
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import {EIP712Upgradeable} from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -28,7 +28,7 @@ contract SignedVault is
     ReentrancyGuardUpgradeable,
     EIP712Upgradeable,
     UUPSUpgradeable,
-    OwnableUpgradeable
+    Ownable2StepUpgradeable
 {
     using SafeERC20 for IERC20;
 
@@ -56,9 +56,8 @@ contract SignedVault is
     /// @notice Mapping of resolver balances by token
     mapping(address resolver => mapping(address token => uint256 balance)) public resolverBalanceOf;
 
-    /// @notice Mapping to track deposits by hash for backend verification
-    /// @dev Hash is created from keccak256(abi.encodePacked(user, nonce))
-    mapping(bytes32 depositHash => uint256 amount) public deposits;
+    /// @notice Mapping to track deposits by user and nonce for backend verification
+    mapping(address user => mapping(uint256 nonce => uint256 amount)) public deposits;
 
     // @notice Reserved slots for upgradeability
     uint256[50] private __gap; // 50 reserved slots
@@ -88,7 +87,7 @@ contract SignedVault is
     error SignatureExpired();
     error ETHTransferFailed();
     error InvalidResolver();
-    error DuplicateDeposit(bytes32 depositHash);
+    error DuplicateDeposit(address user, uint256 nonce);
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                        CONSTRUCTOR                         */
@@ -118,16 +117,16 @@ contract SignedVault is
     function depositETH(address resolver, uint256 nonce) external payable {
         if (resolver == address(0)) revert InvalidResolver();
 
-        // Create deposit hash from user address and nonce
-        bytes32 depositHash = keccak256(abi.encodePacked(msg.sender, nonce));
-
         // Check for duplicate deposits
-        if (deposits[depositHash] != 0) revert DuplicateDeposit(depositHash);
+        if (deposits[msg.sender][nonce] != 0) revert DuplicateDeposit(msg.sender, nonce);
 
         // Store deposit for backend verification
-        deposits[depositHash] = msg.value;
+        deposits[msg.sender][nonce] = msg.value;
 
-        resolverBalanceOf[resolver][ETH_ADDRESS] += msg.value;
+        unchecked {
+            resolverBalanceOf[resolver][ETH_ADDRESS] += msg.value;
+        }
+
         emit Deposit(msg.sender, ETH_ADDRESS, msg.value, nonce);
     }
 
@@ -142,16 +141,13 @@ contract SignedVault is
         if (token == ETH_ADDRESS) revert InvalidAsset();
         if (resolver == address(0)) revert InvalidResolver();
 
-        // Create deposit hash from user address and nonce
-        bytes32 depositHash = keccak256(abi.encodePacked(msg.sender, nonce));
-
         // Check for duplicate deposits
-        if (deposits[depositHash] != 0) revert DuplicateDeposit(depositHash);
+        if (deposits[msg.sender][nonce] != 0) revert DuplicateDeposit(msg.sender, nonce);
 
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
 
         // Store deposit for backend verification
-        deposits[depositHash] = amount;
+        deposits[msg.sender][nonce] = amount;
 
         resolverBalanceOf[resolver][token] += amount;
         emit Deposit(msg.sender, token, amount, nonce);
@@ -176,11 +172,8 @@ contract SignedVault is
         if (token == ETH_ADDRESS) revert InvalidAsset();
         if (resolver == address(0)) revert InvalidResolver();
 
-        // Create deposit hash from user address and nonce
-        bytes32 depositHash = keccak256(abi.encodePacked(msg.sender, nonce));
-
         // Check for duplicate deposits
-        if (deposits[depositHash] != 0) revert DuplicateDeposit(depositHash);
+        if (deposits[msg.sender][nonce] != 0) revert DuplicateDeposit(msg.sender, nonce);
 
         // Create transfer details - use full permitted amount
         ISignatureTransfer.SignatureTransferDetails memory transferDetails =
@@ -190,7 +183,7 @@ contract SignedVault is
         PERMIT2.permitTransferFrom(permit, transferDetails, msg.sender, signature);
 
         // Store deposit for backend verification
-        deposits[depositHash] = amount;
+        deposits[msg.sender][nonce] = amount;
 
         resolverBalanceOf[resolver][token] += amount;
         emit Deposit(msg.sender, token, amount, nonce);
@@ -201,13 +194,34 @@ contract SignedVault is
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /**
-     * @notice Cancel a signature to prevent its future use
-     * @dev Anyone can cancel any signature by providing it
+     * @notice Cancel a withdrawal signature to prevent its future use
+     * @dev Only the resolver who signed the signature can cancel it
+     * @param user Address of the user in the original signature
+     * @param token Token address in the original signature (ETH_ADDRESS for ETH)
+     * @param amount Amount in the original signature
+     * @param deadline Deadline in the original signature
      * @param signature The signature to cancel
      */
-    function cancelSignature(bytes calldata signature) external {
-        // Mark the signature hash as used to prevent its future use
+    function cancelSignature(address user, address token, uint256 amount, uint256 deadline, bytes calldata signature)
+        external
+    {
+        // Check if signature has already been used or cancelled
         bytes32 signatureHash = keccak256(signature);
+        if (usedSignatures[signatureHash]) {
+            revert SignatureAlreadyUsed(signatureHash);
+        }
+
+        // Reconstruct the message hash from the original parameters
+        bytes32 messageHash =
+            _hashTypedDataV4(keccak256(abi.encode(WITHDRAW_TYPEHASH, user, token, amount, msg.sender, deadline)));
+
+        // Verify that the caller is the resolver who signed this signature
+        address recoveredSigner = ECDSA.recover(messageHash, signature);
+        if (recoveredSigner == address(0) || recoveredSigner != msg.sender) {
+            revert InvalidSignature();
+        }
+
+        // Mark the signature hash as used to prevent its future use
         usedSignatures[signatureHash] = true;
 
         emit SignatureCancelled(msg.sender, signature);
@@ -283,6 +297,8 @@ contract SignedVault is
             _hashTypedDataV4(keccak256(abi.encode(WITHDRAW_TYPEHASH, user, token, amount, resolver, deadline)));
 
         // Check if signature has been used before (includes cancelled signatures)
+        // @review: It is allowed to use signatureHash as a unique identifier here because Solady/OZ removed the possibility of mutating the signature, but still, it is an anti-pattern.
+        // So I'm not going to mention it's an issue, but just remind this and double-check with the audit team.
         bytes32 signatureHash = keccak256(signature);
         if (usedSignatures[signatureHash]) revert SignatureAlreadyUsed(signatureHash);
 
@@ -301,7 +317,9 @@ contract SignedVault is
         usedSignatures[signatureHash] = true;
 
         // Deduct from resolver's balance
-        resolverBalanceOf[resolver][token] -= amount;
+        unchecked {
+            resolverBalanceOf[resolver][token] -= amount;
+        }
 
         // Transfer assets
         if (token == ETH_ADDRESS) {
@@ -312,41 +330,6 @@ contract SignedVault is
         }
 
         emit Withdraw(user, token, amount);
-    }
-
-    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-    /*                       VIEW FUNCTIONS                       */
-    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
-
-    /**
-     * @notice Get a resolver's balance for a specific token
-     * @param resolver Resolver address
-     * @param token Token address (ETH_ADDRESS for ETH)
-     * @return balance Resolver's balance
-     */
-    function getResolverBalance(address resolver, address token) external view returns (uint256 balance) {
-        return resolverBalanceOf[resolver][token];
-    }
-
-    /**
-     * @notice Get deposit amount by hash for backend verification
-     * @param user User address
-     * @param nonce User-provided nonce
-     * @return amount Deposit amount (0 if not found)
-     */
-    function getDepositByHash(address user, uint256 nonce) external view returns (uint256 amount) {
-        bytes32 depositHash = keccak256(abi.encodePacked(user, nonce));
-        return deposits[depositHash];
-    }
-
-    /**
-     * @notice Create deposit hash from user address and nonce
-     * @param user User address
-     * @param nonce User-provided nonce
-     * @return depositHash The hash used as deposit key
-     */
-    function createDepositHash(address user, uint256 nonce) external pure returns (bytes32 depositHash) {
-        return keccak256(abi.encodePacked(user, nonce));
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/

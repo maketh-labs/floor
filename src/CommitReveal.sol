@@ -5,7 +5,7 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import {EIP712Upgradeable} from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
@@ -28,7 +28,7 @@ contract CommitReveal is
     ReentrancyGuardUpgradeable,
     EIP712Upgradeable,
     UUPSUpgradeable,
-    OwnableUpgradeable
+    Ownable2StepUpgradeable
 {
     using SafeERC20 for IERC20;
 
@@ -77,7 +77,7 @@ contract CommitReveal is
     /// @notice Mapping of resolver balances by token
     mapping(address resolver => mapping(address token => uint256 balance)) public balanceOf;
 
-    // @notice Reserved slots for upgradeability
+    /// @notice Reserved slots for upgradeability
     uint256[50] private __gap; // 50 reserved slots
 
     /// @notice Game status enum
@@ -106,7 +106,7 @@ contract CommitReveal is
     }
 
     /// @notice Mapping from game signature hash to Game data
-    mapping(bytes32 signatureHash => Game game) public games;
+    mapping(bytes32 signatureHash => Game game) internal _games;
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                           EVENTS                           */
@@ -182,6 +182,15 @@ contract CommitReveal is
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /**
+     * @notice Get game data by game ID
+     * @param gameId The game ID (signature hash)
+     * @return game The Game struct containing all game data
+     */
+    function games(bytes32 gameId) external view returns (Game memory game) {
+        return _games[gameId];
+    }
+
+    /**
      * @notice Creates a new game. Supports both ETH and ERC20 tokens.
      * @param params Game creation parameters grouped in a struct
      * @param serverSignature Signature from the server authorizing this game creation
@@ -215,8 +224,6 @@ contract CommitReveal is
 
         _createGame(params, resolver, msg.sender, gameId, salt);
     }
-    // @audit: Player's funds could be locked when the resolver is not able to pay out, but this contract is designed to trust the resolver so it might not be a problem.
-    //         Should check with the team. One possible option is to add a function to cancel the game and refund the player.
 
     /**
      * @notice Creates a new game using Permit2 for gasless ERC20 approvals
@@ -281,7 +288,7 @@ contract CommitReveal is
         uint256 deadline,
         bytes calldata serverSignature
     ) external nonReentrant {
-        Game storage game = games[gameId];
+        Game storage game = _games[gameId];
         if (game.status == GameStatus.None) {
             revert GameDoesNotExist(gameId);
         }
@@ -311,7 +318,9 @@ contract CommitReveal is
         game.gameSeed = gameSeed;
 
         // Update balances - deduct payout from resolver (bet amount already added at game creation)
-        balanceOf[game.resolver][game.token] -= payoutAmount;
+        unchecked {
+            balanceOf[game.resolver][game.token] -= payoutAmount;
+        }
 
         // Transfer payout to player
         if (game.token == ETH_ADDRESS) {
@@ -341,7 +350,7 @@ contract CommitReveal is
         uint256 deadline,
         bytes calldata serverSignature
     ) external {
-        Game storage game = games[gameId];
+        Game storage game = _games[gameId];
         if (game.status == GameStatus.None) {
             revert GameDoesNotExist(gameId);
         }
@@ -375,9 +384,11 @@ contract CommitReveal is
     /**
      * @notice Deposit ETH as a resolver to provide liquidity for games
      */
-    function depositETH() external payable {
+    function depositETH() external payable nonReentrant {
         if (msg.value == 0) revert InvalidAmount(msg.value);
-        balanceOf[msg.sender][ETH_ADDRESS] += msg.value;
+        unchecked {
+            balanceOf[msg.sender][ETH_ADDRESS] += msg.value;
+        }
         emit Deposit(msg.sender, ETH_ADDRESS, msg.value);
     }
 
@@ -386,10 +397,37 @@ contract CommitReveal is
      * @param token Token address
      * @param amount Amount to deposit
      */
-    function deposit(address token, uint256 amount) external {
+    function deposit(address token, uint256 amount) external nonReentrant {
         if (token == ETH_ADDRESS) revert InvalidAsset();
         if (amount == 0) revert InvalidAmount(amount);
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
+        balanceOf[msg.sender][token] += amount;
+        emit Deposit(msg.sender, token, amount);
+    }
+
+    /**
+     * @notice Deposit ERC20 tokens using Permit2 for gasless approvals
+     * @param permit Permit2 permit data signed by the depositor
+     * @param permitSignature Depositor's signature for the Permit2 transfer
+     */
+    function depositWithPermit2(ISignatureTransfer.PermitTransferFrom memory permit, bytes calldata permitSignature)
+        external
+        nonReentrant
+    {
+        address token = permit.permitted.token;
+        uint256 amount = permit.permitted.amount;
+
+        if (token == ETH_ADDRESS) revert InvalidAsset();
+        if (amount == 0) revert InvalidAmount(amount);
+
+        // Create transfer details - use full permitted amount
+        ISignatureTransfer.SignatureTransferDetails memory transferDetails =
+            ISignatureTransfer.SignatureTransferDetails({to: address(this), requestedAmount: amount});
+
+        // Transfer tokens using Permit2
+        PERMIT2.permitTransferFrom(permit, transferDetails, msg.sender, permitSignature);
+
+        // Update balance
         balanceOf[msg.sender][token] += amount;
         emit Deposit(msg.sender, token, amount);
     }
@@ -404,7 +442,9 @@ contract CommitReveal is
             revert InsufficientContractBalance(ETH_ADDRESS, amount, balanceOf[msg.sender][ETH_ADDRESS]);
         }
 
-        balanceOf[msg.sender][ETH_ADDRESS] -= amount;
+        unchecked {
+            balanceOf[msg.sender][ETH_ADDRESS] -= amount;
+        }
 
         (bool success,) = payable(msg.sender).call{value: amount}("");
         if (!success) revert ETHTransferFailed();
@@ -424,7 +464,9 @@ contract CommitReveal is
             revert InsufficientContractBalance(token, amount, balanceOf[msg.sender][token]);
         }
 
-        balanceOf[msg.sender][token] -= amount;
+        unchecked {
+            balanceOf[msg.sender][token] -= amount;
+        }
         IERC20(token).safeTransfer(msg.sender, amount);
 
         emit Withdraw(msg.sender, token, amount);
@@ -499,7 +541,7 @@ contract CommitReveal is
         balanceOf[resolver][params.token] += params.betAmount;
 
         // Create game using signature hash as ID
-        games[gameId] = Game({
+        _games[gameId] = Game({
             status: GameStatus.Active,
             player: player,
             resolver: resolver,
