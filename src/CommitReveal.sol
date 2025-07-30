@@ -102,7 +102,6 @@ contract CommitReveal is
         bytes32 algorithm; // IPFS CID (as bytes32) pointing to the deterministic algorithm
         bytes32 gameConfig; // CID of game configuration JSON
         bytes32 gameState; // CID of final game state/player moves JSON
-        // @audit: It doesn't seem to prevent seed premining. The salt is not used for any kinds of validation.
         bytes32 salt; // User-provided entropy to prevent seed premining
     }
 
@@ -113,7 +112,6 @@ contract CommitReveal is
     /*                           EVENTS                           */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    // @review: Consider adding indexed prefix at the event parameters. ex) gameId
     /// @notice Emitted when a new game is created
     event GameCreated(
         bytes32 gameId,
@@ -226,8 +224,6 @@ contract CommitReveal is
 
         _createGame(params, resolver, msg.sender, gameId, salt);
     }
-    // @audit: Player's funds could be locked when the resolver is not able to pay out, but this contract is designed to trust the resolver so it might not be a problem.
-    //         Should check with the team. One possible option is to add a function to cancel the game and refund the player.
 
     /**
      * @notice Creates a new game using Permit2 for gasless ERC20 approvals
@@ -414,10 +410,10 @@ contract CommitReveal is
      * @param permit Permit2 permit data signed by the depositor
      * @param permitSignature Depositor's signature for the Permit2 transfer
      */
-    function depositWithPermit2(
-        ISignatureTransfer.PermitTransferFrom memory permit,
-        bytes calldata permitSignature
-    ) external nonReentrant {
+    function depositWithPermit2(ISignatureTransfer.PermitTransferFrom memory permit, bytes calldata permitSignature)
+        external
+        nonReentrant
+    {
         address token = permit.permitted.token;
         uint256 amount = permit.permitted.amount;
 
