@@ -412,28 +412,28 @@ contract CommitReveal is
     /**
      * @notice Deposit ERC20 tokens using Permit2 for gasless approvals
      * @param permit Permit2 permit data signed by the depositor
-     * @param transferDetails Details of the token transfer (to, requestedAmount)
      * @param permitSignature Depositor's signature for the Permit2 transfer
      */
     function depositWithPermit2(
         ISignatureTransfer.PermitTransferFrom memory permit,
-        ISignatureTransfer.SignatureTransferDetails calldata transferDetails,
         bytes calldata permitSignature
     ) external nonReentrant {
-        if (permit.permitted.token == ETH_ADDRESS) revert InvalidAsset();
-        if (permit.permitted.amount == 0) revert InvalidAmount(permit.permitted.amount);
+        address token = permit.permitted.token;
+        uint256 amount = permit.permitted.amount;
 
-        // Verify transfer details are safe
-        if (transferDetails.to != address(this)) revert InvalidPermitTransfer();
-        if (transferDetails.requestedAmount == 0) revert InvalidAmount(transferDetails.requestedAmount);
-        if (transferDetails.requestedAmount > permit.permitted.amount) revert InsufficientPermitAmount();
+        if (token == ETH_ADDRESS) revert InvalidAsset();
+        if (amount == 0) revert InvalidAmount(amount);
+
+        // Create transfer details - use full permitted amount
+        ISignatureTransfer.SignatureTransferDetails memory transferDetails =
+            ISignatureTransfer.SignatureTransferDetails({to: address(this), requestedAmount: amount});
 
         // Transfer tokens using Permit2
         PERMIT2.permitTransferFrom(permit, transferDetails, msg.sender, permitSignature);
 
         // Update balance
-        balanceOf[msg.sender][permit.permitted.token] += transferDetails.requestedAmount;
-        emit Deposit(msg.sender, permit.permitted.token, transferDetails.requestedAmount);
+        balanceOf[msg.sender][token] += amount;
+        emit Deposit(msg.sender, token, amount);
     }
 
     /**
