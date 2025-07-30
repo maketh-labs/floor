@@ -388,9 +388,7 @@ contract CommitReveal is
     /**
      * @notice Deposit ETH as a resolver to provide liquidity for games
      */
-    // @review: These deposit functions can be re-entrant, but there are no attack vectors.
-    // Maybe it would be better to add a re-entrancy guard preparing the unknown future changes.
-    function depositETH() external payable {
+    function depositETH() external payable nonReentrant {
         if (msg.value == 0) revert InvalidAmount(msg.value);
         unchecked {
             balanceOf[msg.sender][ETH_ADDRESS] += msg.value;
@@ -403,14 +401,40 @@ contract CommitReveal is
      * @param token Token address
      * @param amount Amount to deposit
      */
-    function deposit(address token, uint256 amount) external {
+    function deposit(address token, uint256 amount) external nonReentrant {
         if (token == ETH_ADDRESS) revert InvalidAsset();
         if (amount == 0) revert InvalidAmount(amount);
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
         balanceOf[msg.sender][token] += amount;
         emit Deposit(msg.sender, token, amount);
     }
-    // @review: Adding depositWithPermit2? but not that necessary.
+
+    /**
+     * @notice Deposit ERC20 tokens using Permit2 for gasless approvals
+     * @param permit Permit2 permit data signed by the depositor
+     * @param transferDetails Details of the token transfer (to, requestedAmount)
+     * @param permitSignature Depositor's signature for the Permit2 transfer
+     */
+    function depositWithPermit2(
+        ISignatureTransfer.PermitTransferFrom memory permit,
+        ISignatureTransfer.SignatureTransferDetails calldata transferDetails,
+        bytes calldata permitSignature
+    ) external nonReentrant {
+        if (permit.permitted.token == ETH_ADDRESS) revert InvalidAsset();
+        if (permit.permitted.amount == 0) revert InvalidAmount(permit.permitted.amount);
+
+        // Verify transfer details are safe
+        if (transferDetails.to != address(this)) revert InvalidPermitTransfer();
+        if (transferDetails.requestedAmount == 0) revert InvalidAmount(transferDetails.requestedAmount);
+        if (transferDetails.requestedAmount > permit.permitted.amount) revert InsufficientPermitAmount();
+
+        // Transfer tokens using Permit2
+        PERMIT2.permitTransferFrom(permit, transferDetails, msg.sender, permitSignature);
+
+        // Update balance
+        balanceOf[msg.sender][permit.permitted.token] += transferDetails.requestedAmount;
+        emit Deposit(msg.sender, permit.permitted.token, transferDetails.requestedAmount);
+    }
 
     /**
      * @notice Withdraw ETH from resolver balance
