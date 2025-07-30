@@ -77,7 +77,7 @@ contract CommitReveal is
     /// @notice Mapping of resolver balances by token
     mapping(address resolver => mapping(address token => uint256 balance)) public balanceOf;
 
-    // @notice Reserved slots for upgradeability
+    /// @notice Reserved slots for upgradeability
     uint256[50] private __gap; // 50 reserved slots
 
     /// @notice Game status enum
@@ -107,9 +107,7 @@ contract CommitReveal is
     }
 
     /// @notice Mapping from game signature hash to Game data
-    // @review: It's better to define struct storage as an internal/private variable and use a getter function to access it.
-    // That makes easier to use the getter function in other contracts.
-    mapping(bytes32 signatureHash => Game game) public games;
+    mapping(bytes32 signatureHash => Game game) internal _games;
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                           EVENTS                           */
@@ -184,6 +182,15 @@ contract CommitReveal is
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                     EXTERNAL FUNCTIONS                     */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    /**
+     * @notice Get game data by game ID
+     * @param gameId The game ID (signature hash)
+     * @return game The Game struct containing all game data
+     */
+    function games(bytes32 gameId) external view returns (Game memory game) {
+        return _games[gameId];
+    }
 
     /**
      * @notice Creates a new game. Supports both ETH and ERC20 tokens.
@@ -285,7 +292,7 @@ contract CommitReveal is
         uint256 deadline,
         bytes calldata serverSignature
     ) external nonReentrant {
-        Game storage game = games[gameId];
+        Game storage game = _games[gameId];
         if (game.status == GameStatus.None) {
             revert GameDoesNotExist(gameId);
         }
@@ -347,7 +354,7 @@ contract CommitReveal is
         uint256 deadline,
         bytes calldata serverSignature
     ) external {
-        Game storage game = games[gameId];
+        Game storage game = _games[gameId];
         if (game.status == GameStatus.None) {
             revert GameDoesNotExist(gameId);
         }
@@ -514,7 +521,7 @@ contract CommitReveal is
         balanceOf[resolver][params.token] += params.betAmount;
 
         // Create game using signature hash as ID
-        games[gameId] = Game({
+        _games[gameId] = Game({
             status: GameStatus.Active,
             player: player,
             resolver: resolver,
