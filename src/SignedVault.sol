@@ -291,7 +291,7 @@ contract SignedVault is
             _hashTypedDataV4(keccak256(abi.encode(WITHDRAW_TYPEHASH, user, token, amount, resolver, deadline)));
 
         // Check if signature has been used before (includes cancelled signatures)
-        // @review: It is allowed to use signatureHash as a unique identifier here because Solady removed the possibility of mutating the signature, but still, it is an anti-pattern.
+        // @review: It is allowed to use signatureHash as a unique identifier here because Solady/OZ removed the possibility of mutating the signature, but still, it is an anti-pattern.
         // So I'm not going to mention it's an issue, but just remind this and double-check with the audit team.
         bytes32 signatureHash = keccak256(signature);
         if (usedSignatures[signatureHash]) revert SignatureAlreadyUsed(signatureHash);
