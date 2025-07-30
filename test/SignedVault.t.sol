@@ -623,7 +623,7 @@ contract SignedVaultTest is Test, DeployPermit2 {
 
         // Resolver cancels the signature
         vm.prank(resolver1);
-        signedVault.cancelSignature(signature);
+        signedVault.cancelSignature(user, address(0), withdrawAmount, deadline, signature);
 
         // Check that signature hash is marked as used (cancelled)
         assertTrue(signedVault.usedSignatures(signatureHash));
@@ -643,7 +643,7 @@ contract SignedVaultTest is Test, DeployPermit2 {
 
         // Resolver cancels the signature first
         vm.prank(resolver1);
-        signedVault.cancelSignature(signature);
+        signedVault.cancelSignature(user, address(0), withdrawAmount, deadline, signature);
 
         // Withdrawal should fail with SignatureAlreadyUsed error
         vm.prank(user);
@@ -651,7 +651,7 @@ contract SignedVaultTest is Test, DeployPermit2 {
         signedVault.withdrawETH(user, withdrawAmount, resolver1, deadline, signature);
     }
 
-    function testAnyoneCanCancelAnySignature() public {
+    function testOnlyResolverCanCancelSignature() public {
         uint256 nonce = 1;
         vm.prank(user);
         signedVault.depositETH{value: DEPOSIT_AMOUNT}(resolver1, nonce);
@@ -665,20 +665,23 @@ contract SignedVaultTest is Test, DeployPermit2 {
 
         bytes32 signatureHash = keccak256(signature);
 
-        // User cancels resolver1's signature (this should work now)
+        // User tries to cancel resolver1's signature (this should now fail)
+        vm.prank(user);
+        vm.expectRevert(SignedVault.InvalidSignature.selector);
+        signedVault.cancelSignature(user, address(0), withdrawAmount, deadline, signature);
+
+        // Check that signature is NOT marked as used (since cancellation failed)
+        assertFalse(signedVault.usedSignatures(signatureHash));
+
+        // Now resolver1 can successfully cancel their own signature
         vm.expectEmit(true, true, true, true);
-        emit SignatureCancelled(user, signature);
+        emit SignatureCancelled(resolver1, signature);
 
-        vm.prank(user);
-        signedVault.cancelSignature(signature);
+        vm.prank(resolver1);
+        signedVault.cancelSignature(user, address(0), withdrawAmount, deadline, signature);
 
-        // Check that signature is marked as used
+        // Now signature should be marked as used
         assertTrue(signedVault.usedSignatures(signatureHash));
-
-        // Withdrawal should fail even though resolver1 created the signature
-        vm.prank(user);
-        vm.expectRevert(abi.encodeWithSelector(SignedVault.SignatureAlreadyUsed.selector, signatureHash));
-        signedVault.withdrawETH(user, withdrawAmount, resolver1, deadline, signature);
     }
 
     function testCancelSignatureForERC20() public {
@@ -699,7 +702,7 @@ contract SignedVaultTest is Test, DeployPermit2 {
 
         // Cancel the signature
         vm.prank(resolver1);
-        signedVault.cancelSignature(signature);
+        signedVault.cancelSignature(user, address(token), withdrawAmount, deadline, signature);
 
         // Check that signature hash is marked as used (cancelled)
         assertTrue(signedVault.usedSignatures(signatureHash));
@@ -730,9 +733,10 @@ contract SignedVaultTest is Test, DeployPermit2 {
         // Signature should already be marked as used
         assertTrue(signedVault.usedSignatures(signatureHash));
 
-        // Now try to cancel the already-used signature (should not revert)
+        // Now try to cancel the already-used signature (should revert with SignatureAlreadyUsed)
         vm.prank(resolver1);
-        signedVault.cancelSignature(signature);
+        vm.expectRevert(abi.encodeWithSelector(SignedVault.SignatureAlreadyUsed.selector, keccak256(signature)));
+        signedVault.cancelSignature(user, address(0), withdrawAmount, deadline, signature);
 
         // Signature should still be marked as used
         assertTrue(signedVault.usedSignatures(signatureHash));

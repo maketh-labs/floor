@@ -194,14 +194,34 @@ contract SignedVault is
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /**
-     * @notice Cancel a signature to prevent its future use
-     * @dev Anyone can cancel any signature by providing it
+     * @notice Cancel a withdrawal signature to prevent its future use
+     * @dev Only the resolver who signed the signature can cancel it
+     * @param user Address of the user in the original signature
+     * @param token Token address in the original signature (ETH_ADDRESS for ETH)
+     * @param amount Amount in the original signature
+     * @param deadline Deadline in the original signature
      * @param signature The signature to cancel
      */
-    // @audit: Anyone can cancel any signatures. Could be used to DoS by front running.
-    function cancelSignature(bytes calldata signature) external {
-        // Mark the signature hash as used to prevent its future use
+    function cancelSignature(address user, address token, uint256 amount, uint256 deadline, bytes calldata signature)
+        external
+    {
+        // Check if signature has already been used or cancelled
         bytes32 signatureHash = keccak256(signature);
+        if (usedSignatures[signatureHash]) {
+            revert SignatureAlreadyUsed(signatureHash);
+        }
+
+        // Reconstruct the message hash from the original parameters
+        bytes32 messageHash =
+            _hashTypedDataV4(keccak256(abi.encode(WITHDRAW_TYPEHASH, user, token, amount, msg.sender, deadline)));
+
+        // Verify that the caller is the resolver who signed this signature
+        address recoveredSigner = ECDSA.recover(messageHash, signature);
+        if (recoveredSigner == address(0) || recoveredSigner != msg.sender) {
+            revert InvalidSignature();
+        }
+
+        // Mark the signature hash as used to prevent its future use
         usedSignatures[signatureHash] = true;
 
         emit SignatureCancelled(msg.sender, signature);
