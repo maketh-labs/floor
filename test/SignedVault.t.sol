@@ -44,6 +44,21 @@ contract SignedVaultTest is Test, DeployPermit2 {
     // Events to test
     event Deposit(address user, address token, uint256 amount, uint256 nonce);
     event SignatureCancelled(address resolver, bytes signature);
+    event Withdraw(address user, address token, uint256 amount);
+
+    // Helper function to create a basic ETH deposit
+    function createBasicETHDeposit(address depositor, address resolverAddr, uint256 amount, uint256 nonce) internal {
+        vm.prank(depositor);
+        signedVault.depositETH{value: amount}(resolverAddr, nonce);
+    }
+
+    // Helper function to create a basic token deposit
+    function createBasicTokenDeposit(address depositor, address resolverAddr, uint256 amount, uint256 nonce) internal {
+        vm.prank(depositor);
+        token.approve(address(signedVault), amount);
+        vm.prank(depositor);
+        signedVault.deposit(address(token), amount, resolverAddr, nonce);
+    }
 
     function setUp() public {
         // Deploy actual Permit2 contract
@@ -55,7 +70,7 @@ contract SignedVaultTest is Test, DeployPermit2 {
         (resolver2, resolver2PrivateKey) = makeAddrAndKey("resolver2");
         (owner, ownerPrivateKey) = makeAddrAndKey("owner");
 
-        // Deploy Tapital implementation
+        // Deploy SignedVault implementation
         SignedVault implementation = new SignedVault(address(permit2));
 
         // Deploy proxy with initialization
@@ -281,15 +296,6 @@ contract SignedVaultTest is Test, DeployPermit2 {
         uint256 deadline = block.timestamp + 1 hours;
         uint256 amount = TOKEN_DEPOSIT_AMOUNT;
 
-        ISignatureTransfer.PermitTransferFrom memory permit = ISignatureTransfer.PermitTransferFrom({
-            permitted: ISignatureTransfer.TokenPermissions({token: address(token), amount: amount}),
-            nonce: nonce,
-            deadline: deadline
-        });
-
-        bytes memory permitSignature =
-            createPermit2Signature(address(token), amount, nonce, deadline, address(signedVault));
-
         // Create permit for ETH address (invalid)
         ISignatureTransfer.PermitTransferFrom memory invalidPermit = ISignatureTransfer.PermitTransferFrom({
             permitted: ISignatureTransfer.TokenPermissions({token: address(0), amount: amount}),
@@ -344,9 +350,7 @@ contract SignedVaultTest is Test, DeployPermit2 {
 
     function testWithdrawETH() public {
         // First deposit
-        uint256 nonce = 1;
-        vm.prank(user);
-        signedVault.depositETH{value: DEPOSIT_AMOUNT}(resolver1, nonce);
+        createBasicETHDeposit(user, resolver1, DEPOSIT_AMOUNT, 1);
 
         uint256 withdrawAmount = DEPOSIT_AMOUNT / 2;
         uint256 deadline = block.timestamp + 1 hours;
@@ -355,6 +359,10 @@ contract SignedVaultTest is Test, DeployPermit2 {
             createWithdrawSignature(user, address(0), withdrawAmount, resolver1, resolver1PrivateKey, deadline);
 
         uint256 balanceBefore = user.balance;
+
+        // Expect the Withdraw event
+        vm.expectEmit(true, true, true, true);
+        emit Withdraw(user, address(0), withdrawAmount);
 
         vm.prank(user);
         signedVault.withdrawETH(user, withdrawAmount, resolver1, deadline, signature);
@@ -366,11 +374,7 @@ contract SignedVaultTest is Test, DeployPermit2 {
 
     function testWithdrawERC20() public {
         // First deposit
-        uint256 nonce = 1;
-        vm.prank(user);
-        token.approve(address(signedVault), TOKEN_DEPOSIT_AMOUNT);
-        vm.prank(user);
-        signedVault.deposit(address(token), TOKEN_DEPOSIT_AMOUNT, resolver1, nonce);
+        createBasicTokenDeposit(user, resolver1, TOKEN_DEPOSIT_AMOUNT, 1);
 
         uint256 withdrawAmount = TOKEN_DEPOSIT_AMOUNT / 2;
         uint256 deadline = block.timestamp + 1 hours;
@@ -379,6 +383,10 @@ contract SignedVaultTest is Test, DeployPermit2 {
             createWithdrawSignature(user, address(token), withdrawAmount, resolver1, resolver1PrivateKey, deadline);
 
         uint256 balanceBefore = token.balanceOf(user);
+
+        // Expect the Withdraw event
+        vm.expectEmit(true, true, true, true);
+        emit Withdraw(user, address(token), withdrawAmount);
 
         vm.prank(user);
         signedVault.withdraw(user, address(token), withdrawAmount, resolver1, deadline, signature);
@@ -443,9 +451,7 @@ contract SignedVaultTest is Test, DeployPermit2 {
     }
 
     function testWithdrawInvalidSignature() public {
-        uint256 nonce = 1;
-        vm.prank(user);
-        signedVault.depositETH{value: DEPOSIT_AMOUNT}(resolver1, nonce);
+        createBasicETHDeposit(user, resolver1, DEPOSIT_AMOUNT, 1);
 
         uint256 withdrawAmount = DEPOSIT_AMOUNT / 2;
         uint256 deadline = block.timestamp + 1 hours;
@@ -457,6 +463,17 @@ contract SignedVaultTest is Test, DeployPermit2 {
         vm.prank(user);
         vm.expectRevert(SignedVault.InvalidSignature.selector);
         signedVault.withdrawETH(user, withdrawAmount, resolver1, deadline, wrongSignature);
+    }
+
+    function testWithdrawZeroAmount() public {
+        createBasicETHDeposit(user, resolver1, DEPOSIT_AMOUNT, 1);
+
+        uint256 deadline = block.timestamp + 1 hours;
+        bytes memory signature = createWithdrawSignature(user, address(0), 0, resolver1, resolver1PrivateKey, deadline);
+
+        vm.prank(user);
+        vm.expectRevert(abi.encodeWithSelector(SignedVault.InvalidAmount.selector, 0));
+        signedVault.withdrawETH(user, 0, resolver1, deadline, signature);
     }
 
     // ============ RESOLVER TESTS ============
@@ -508,13 +525,11 @@ contract SignedVaultTest is Test, DeployPermit2 {
         uint256 nonce = 1;
 
         // User deposits with nonce 1
-        vm.prank(user);
-        signedVault.depositETH{value: DEPOSIT_AMOUNT}(resolver1, nonce);
+        createBasicETHDeposit(user, resolver1, DEPOSIT_AMOUNT, nonce);
 
         // Resolver1 can still use the same nonce for their own deposit
         vm.deal(resolver1, DEPOSIT_AMOUNT);
-        vm.prank(resolver1);
-        signedVault.depositETH{value: DEPOSIT_AMOUNT}(resolver2, nonce);
+        createBasicETHDeposit(resolver1, resolver2, DEPOSIT_AMOUNT, nonce);
 
         // Both deposits should be successful and tracked separately
         assertEq(signedVault.deposits(user, nonce), DEPOSIT_AMOUNT);
@@ -535,11 +550,8 @@ contract SignedVaultTest is Test, DeployPermit2 {
         uint256 amount2 = DEPOSIT_AMOUNT * 2;
 
         // Make two different deposits with different nonces
-        vm.prank(user);
-        signedVault.depositETH{value: amount1}(resolver1, nonce1);
-
-        vm.prank(user);
-        signedVault.depositETH{value: amount2}(resolver1, nonce2);
+        createBasicETHDeposit(user, resolver1, amount1, nonce1);
+        createBasicETHDeposit(user, resolver1, amount2, nonce2);
 
         // Both should be tracked independently
         assertEq(signedVault.deposits(user, nonce1), amount1);
@@ -554,18 +566,39 @@ contract SignedVaultTest is Test, DeployPermit2 {
         uint256 tokenNonce = 2;
 
         // ETH deposit
-        vm.prank(user);
-        signedVault.depositETH{value: DEPOSIT_AMOUNT}(resolver1, ethNonce);
+        createBasicETHDeposit(user, resolver1, DEPOSIT_AMOUNT, ethNonce);
 
         // Token deposit
-        vm.prank(user);
-        token.approve(address(signedVault), TOKEN_DEPOSIT_AMOUNT);
-        vm.prank(user);
-        signedVault.deposit(address(token), TOKEN_DEPOSIT_AMOUNT, resolver1, tokenNonce);
+        createBasicTokenDeposit(user, resolver1, TOKEN_DEPOSIT_AMOUNT, tokenNonce);
 
         // Both should be tracked independently
         assertEq(signedVault.deposits(user, ethNonce), DEPOSIT_AMOUNT);
         assertEq(signedVault.deposits(user, tokenNonce), TOKEN_DEPOSIT_AMOUNT);
+    }
+
+    function testFlexibleNonceUsage() public {
+        // Test that our flexible helper functions enable various nonce scenarios
+
+        // Fund resolver1 for the test
+        vm.deal(resolver1, DEPOSIT_AMOUNT);
+
+        // Different users, same nonce - should work
+        createBasicETHDeposit(user, resolver1, DEPOSIT_AMOUNT, 42);
+        createBasicETHDeposit(resolver1, resolver2, DEPOSIT_AMOUNT / 2, 42);
+
+        // Same user, different nonces - should work
+        createBasicETHDeposit(user, resolver1, DEPOSIT_AMOUNT / 4, 100);
+        createBasicETHDeposit(user, resolver1, DEPOSIT_AMOUNT / 4, 200);
+
+        // Verify all deposits were recorded correctly
+        assertEq(signedVault.deposits(user, 42), DEPOSIT_AMOUNT);
+        assertEq(signedVault.deposits(resolver1, 42), DEPOSIT_AMOUNT / 2);
+        assertEq(signedVault.deposits(user, 100), DEPOSIT_AMOUNT / 4);
+        assertEq(signedVault.deposits(user, 200), DEPOSIT_AMOUNT / 4);
+
+        // Test duplicate nonce should fail
+        vm.expectRevert(abi.encodeWithSelector(SignedVault.DuplicateDeposit.selector, user, 42));
+        createBasicETHDeposit(user, resolver1, DEPOSIT_AMOUNT, 42);
     }
 
     // ============ SIGNATURE CANCELLATION TESTS ============

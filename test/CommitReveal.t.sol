@@ -23,10 +23,14 @@ contract CommitRevealTest is Test, DeployPermit2 {
 
     // Test constants
     uint256 public constant BET_AMOUNT = 1 ether;
+    uint256 public constant LARGE_DEPOSIT = 1000 * 10 ** 18;
+    uint256 public constant SMALL_DEPOSIT = 10 * 10 ** 18;
     bytes32 public constant GAME_SEED_HASH = keccak256("test_seed");
     bytes32 public constant ALGORITHM = bytes32("QmTestAlgorithm");
     bytes32 public constant GAME_CONFIG = bytes32("QmTestGameConfig");
     bytes32 public constant SALT = keccak256("user_entropy_salt");
+    bytes32 public constant GAME_STATE = bytes32("QmState");
+    bytes32 public constant LOST_STATE = bytes32("QmLost");
 
     // EIP712 domain separator for testing
     bytes32 public domainSeparator;
@@ -45,7 +49,7 @@ contract CommitRevealTest is Test, DeployPermit2 {
         // Deploy actual Permit2 contract
         permit2 = ISignatureTransfer(deployPermit2());
 
-        // Deploy Floor implementation
+        // Deploy CommitReveal implementation
         CommitReveal implementation = new CommitReveal(address(permit2));
 
         // Deploy proxy with initialization
@@ -186,6 +190,36 @@ contract CommitRevealTest is Test, DeployPermit2 {
         );
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(resolverPrivateKey, messageHash);
         return abi.encodePacked(r, s, v);
+    }
+
+    // Helper function to setup resolver with token deposits
+    function setupResolverWithTokens(uint256 depositAmount) internal {
+        vm.prank(resolver);
+        token.approve(address(commitReveal), depositAmount);
+        vm.prank(resolver);
+        commitReveal.deposit(address(token), depositAmount);
+    }
+
+    // Helper function to create and fund a game
+    function createTokenGame(uint256 betAmount) internal returns (bytes32 gameId, bytes memory signature) {
+        uint256 deadline = block.timestamp + 1 hours;
+
+        CommitReveal.CreateGameParams memory params = CommitReveal.CreateGameParams({
+            token: address(token),
+            betAmount: betAmount,
+            gameSeedHash: GAME_SEED_HASH,
+            algorithm: ALGORITHM,
+            gameConfig: GAME_CONFIG,
+            deadline: deadline
+        });
+
+        signature = createGameSignature(params, player);
+        gameId = keccak256(signature);
+
+        vm.prank(player);
+        token.approve(address(commitReveal), betAmount);
+        vm.prank(player);
+        commitReveal.createGame(params, signature, SALT);
     }
 
     // ============ BASIC TESTS ============
@@ -592,110 +626,50 @@ contract CommitRevealTest is Test, DeployPermit2 {
     }
 
     function testCashOutByResolver() public {
-        uint256 depositAmount = 1000 * 10 ** 18;
-        vm.prank(resolver);
-        token.approve(address(commitReveal), depositAmount);
-        vm.prank(resolver);
-        commitReveal.deposit(address(token), depositAmount);
-
-        uint256 deadline = block.timestamp + 1 hours;
+        uint256 depositAmount = LARGE_DEPOSIT;
         uint256 betAmount = 100 * 10 ** 18;
 
-        CommitReveal.CreateGameParams memory params = CommitReveal.CreateGameParams({
-            token: address(token),
-            betAmount: betAmount,
-            gameSeedHash: GAME_SEED_HASH,
-            algorithm: ALGORITHM,
-            gameConfig: GAME_CONFIG,
-            deadline: deadline
-        });
-
-        bytes memory signature = createGameSignature(params, player);
-
-        vm.prank(player);
-        token.approve(address(commitReveal), betAmount);
-        vm.prank(player);
-        commitReveal.createGame(params, signature, SALT);
+        setupResolverWithTokens(depositAmount);
+        (bytes32 gameId,) = createTokenGame(betAmount);
 
         uint256 payoutAmount = 50 * 10 ** 18;
-        bytes32 gameState = bytes32("QmState");
         bytes32 gameSeed = keccak256("seed1");
 
         uint256 playerBalanceBefore = token.balanceOf(player);
         vm.prank(resolver);
-        commitReveal.cashOut(keccak256(signature), payoutAmount, gameState, gameSeed, 0, "");
+        commitReveal.cashOut(gameId, payoutAmount, GAME_STATE, gameSeed, 0, "");
 
         assertEq(token.balanceOf(player), playerBalanceBefore + payoutAmount);
         assertEq(commitReveal.balanceOf(resolver, address(token)), depositAmount - payoutAmount + betAmount);
     }
 
     function testCashOutByPlayerWithSignature() public {
-        uint256 depositAmount = 1000 * 10 ** 18;
-        vm.prank(resolver);
-        token.approve(address(commitReveal), depositAmount);
-        vm.prank(resolver);
-        commitReveal.deposit(address(token), depositAmount);
-
-        uint256 deadline = block.timestamp + 1 hours;
+        uint256 depositAmount = LARGE_DEPOSIT;
         uint256 betAmount = 100 * 10 ** 18;
 
-        CommitReveal.CreateGameParams memory params = CommitReveal.CreateGameParams({
-            token: address(token),
-            betAmount: betAmount,
-            gameSeedHash: GAME_SEED_HASH,
-            algorithm: ALGORITHM,
-            gameConfig: GAME_CONFIG,
-            deadline: deadline
-        });
-
-        bytes memory signature = createGameSignature(params, player);
-
-        vm.prank(player);
-        token.approve(address(commitReveal), betAmount);
-        vm.prank(player);
-        commitReveal.createGame(params, signature, SALT);
+        setupResolverWithTokens(depositAmount);
+        (bytes32 gameId,) = createTokenGame(betAmount);
 
         uint256 payoutAmount = 60 * 10 ** 18;
-        bytes32 gameState = bytes32("QmState");
         bytes32 gameSeed = keccak256("seed2");
 
         uint256 sigDeadline = block.timestamp + 1 hours;
-        bytes memory cashSig =
-            createCashOutSignature(keccak256(signature), payoutAmount, gameState, gameSeed, sigDeadline);
+        bytes memory cashSig = createCashOutSignature(gameId, payoutAmount, GAME_STATE, gameSeed, sigDeadline);
 
         uint256 playerBalanceBefore = token.balanceOf(player);
         vm.prank(player);
-        commitReveal.cashOut(keccak256(signature), payoutAmount, gameState, gameSeed, sigDeadline, cashSig);
+        commitReveal.cashOut(gameId, payoutAmount, GAME_STATE, gameSeed, sigDeadline, cashSig);
 
         assertEq(token.balanceOf(player), playerBalanceBefore + payoutAmount);
         assertEq(commitReveal.balanceOf(resolver, address(token)), depositAmount - payoutAmount + betAmount);
     }
 
     function testCashOutInsufficientBalance() public {
-        uint256 depositAmount = 10 * 10 ** 18;
-        vm.prank(resolver);
-        token.approve(address(commitReveal), depositAmount);
-        vm.prank(resolver);
-        commitReveal.deposit(address(token), depositAmount);
-
-        uint256 deadline = block.timestamp + 1 hours;
+        uint256 depositAmount = SMALL_DEPOSIT;
         uint256 betAmount = 5 * 10 ** 18;
 
-        CommitReveal.CreateGameParams memory params = CommitReveal.CreateGameParams({
-            token: address(token),
-            betAmount: betAmount,
-            gameSeedHash: GAME_SEED_HASH,
-            algorithm: ALGORITHM,
-            gameConfig: GAME_CONFIG,
-            deadline: deadline
-        });
-
-        bytes memory signature = createGameSignature(params, player);
-
-        vm.prank(player);
-        token.approve(address(commitReveal), betAmount);
-        vm.prank(player);
-        commitReveal.createGame(params, signature, SALT);
+        setupResolverWithTokens(depositAmount);
+        (bytes32 gameId,) = createTokenGame(betAmount);
 
         uint256 payoutAmount = 20 * 10 ** 18;
 
@@ -708,78 +682,38 @@ contract CommitRevealTest is Test, DeployPermit2 {
                 depositAmount + betAmount
             )
         );
-        commitReveal.cashOut(keccak256(signature), payoutAmount, bytes32("QmState"), keccak256("seed"), 0, "");
+        commitReveal.cashOut(gameId, payoutAmount, GAME_STATE, keccak256("seed"), 0, "");
     }
 
     function testMarkGameAsLostByResolver() public {
-        uint256 depositAmount = 1000 * 10 ** 18;
-        vm.prank(resolver);
-        token.approve(address(commitReveal), depositAmount);
-        vm.prank(resolver);
-        commitReveal.deposit(address(token), depositAmount);
-
-        uint256 deadline = block.timestamp + 1 hours;
+        uint256 depositAmount = LARGE_DEPOSIT;
         uint256 betAmount = 100 * 10 ** 18;
 
-        CommitReveal.CreateGameParams memory params = CommitReveal.CreateGameParams({
-            token: address(token),
-            betAmount: betAmount,
-            gameSeedHash: GAME_SEED_HASH,
-            algorithm: ALGORITHM,
-            gameConfig: GAME_CONFIG,
-            deadline: deadline
-        });
+        setupResolverWithTokens(depositAmount);
+        (bytes32 gameId,) = createTokenGame(betAmount);
 
-        bytes memory signature = createGameSignature(params, player);
-
-        vm.prank(player);
-        token.approve(address(commitReveal), betAmount);
-        vm.prank(player);
-        commitReveal.createGame(params, signature, SALT);
-
-        bytes32 gameState = bytes32("QmLost");
         bytes32 gameSeed = keccak256("lost");
 
         vm.prank(resolver);
-        commitReveal.markGameAsLost(keccak256(signature), gameState, gameSeed, 0, "");
+        commitReveal.markGameAsLost(gameId, LOST_STATE, gameSeed, 0, "");
 
         assertEq(commitReveal.balanceOf(resolver, address(token)), depositAmount + betAmount);
     }
 
     function testMarkGameAsLostByPlayerWithSignature() public {
         uint256 depositAmount = 500 * 10 ** 18;
-        vm.prank(resolver);
-        token.approve(address(commitReveal), depositAmount);
-        vm.prank(resolver);
-        commitReveal.deposit(address(token), depositAmount);
-
-        uint256 deadline = block.timestamp + 1 hours;
         uint256 betAmount = 50 * 10 ** 18;
 
-        CommitReveal.CreateGameParams memory params = CommitReveal.CreateGameParams({
-            token: address(token),
-            betAmount: betAmount,
-            gameSeedHash: GAME_SEED_HASH,
-            algorithm: ALGORITHM,
-            gameConfig: GAME_CONFIG,
-            deadline: deadline
-        });
+        setupResolverWithTokens(depositAmount);
+        (bytes32 gameId,) = createTokenGame(betAmount);
 
-        bytes memory signature = createGameSignature(params, player);
-
-        vm.prank(player);
-        token.approve(address(commitReveal), betAmount);
-        vm.prank(player);
-        commitReveal.createGame(params, signature, SALT);
-
-        bytes32 gameState = bytes32("QmLost");
         bytes32 gameSeed = keccak256("lost2");
 
         uint256 sigDeadline = block.timestamp + 1 hours;
-        bytes memory sigLost = createMarkLostSignature(keccak256(signature), gameState, gameSeed, sigDeadline);
+        bytes memory sigLost = createMarkLostSignature(gameId, LOST_STATE, gameSeed, sigDeadline);
 
         vm.prank(player);
-        commitReveal.markGameAsLost(keccak256(signature), gameState, gameSeed, sigDeadline, sigLost);
+        commitReveal.markGameAsLost(gameId, LOST_STATE, gameSeed, sigDeadline, sigLost);
 
         assertEq(commitReveal.balanceOf(resolver, address(token)), depositAmount + betAmount);
     }
