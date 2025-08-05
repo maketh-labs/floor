@@ -114,7 +114,7 @@ contract SignedVault is
      * @param resolver Address of the resolver who will be responsible for this deposit
      * @param nonce User-provided nonce for deposit verification
      */
-    function depositETH(address resolver, uint256 nonce) external payable {
+    function depositETH(address resolver, uint256 nonce) external payable nonReentrant {
         if (resolver == address(0)) revert InvalidResolver();
 
         // Calculate deposit hash
@@ -140,7 +140,7 @@ contract SignedVault is
      * @param resolver Address of the resolver who will be responsible for this deposit
      * @param nonce User-provided nonce for deposit verification
      */
-    function deposit(address token, uint256 amount, address resolver, uint256 nonce) external {
+    function deposit(address token, uint256 amount, address resolver, uint256 nonce) external nonReentrant {
         if (token == ETH_ADDRESS) revert InvalidAsset();
         if (resolver == address(0)) revert InvalidResolver();
 
@@ -171,7 +171,7 @@ contract SignedVault is
         ISignatureTransfer.PermitTransferFrom memory permit,
         bytes calldata signature,
         uint256 nonce
-    ) external {
+    ) external nonReentrant {
         address token = permit.permitted.token;
         uint256 amount = permit.permitted.amount;
 
@@ -207,7 +207,7 @@ contract SignedVault is
      * @dev Only the resolver can cancel their own nonces
      * @param nonce The nonce to cancel
      */
-    function cancel(uint256 nonce) external {
+    function cancel(uint256 nonce) external nonReentrant {
         // Check if nonce has already been used
         if (usedNonces[msg.sender][nonce]) {
             revert NonceAlreadyUsed(msg.sender, nonce);
