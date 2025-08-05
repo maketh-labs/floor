@@ -56,7 +56,7 @@ contract SignedVault is
     /// @notice Mapping of resolver balances by token
     mapping(address resolver => mapping(address token => uint256 balance)) public resolverBalanceOf;
 
-    /// @notice Mapping to track deposits by hash of user, token, and nonce for backend verification
+    /// @notice Mapping to track deposits by hash of user, token, resolver, and nonce for backend verification
     mapping(bytes32 depositHash => uint256 amount) private _deposits;
 
     // @notice Reserved slots for upgradeability
@@ -118,7 +118,7 @@ contract SignedVault is
         if (resolver == address(0)) revert InvalidResolver();
 
         // Calculate deposit hash
-        bytes32 depositHash = keccak256(abi.encodePacked(msg.sender, ETH_ADDRESS, nonce));
+        bytes32 depositHash = keccak256(abi.encodePacked(msg.sender, ETH_ADDRESS, resolver, nonce));
 
         // Check for duplicate deposits
         if (_deposits[depositHash] != 0) revert DuplicateDeposit(depositHash);
@@ -145,7 +145,7 @@ contract SignedVault is
         if (resolver == address(0)) revert InvalidResolver();
 
         // Calculate deposit hash
-        bytes32 depositHash = keccak256(abi.encodePacked(msg.sender, token, nonce));
+        bytes32 depositHash = keccak256(abi.encodePacked(msg.sender, token, resolver, nonce));
 
         // Check for duplicate deposits
         if (_deposits[depositHash] != 0) revert DuplicateDeposit(depositHash);
@@ -179,7 +179,7 @@ contract SignedVault is
         if (resolver == address(0)) revert InvalidResolver();
 
         // Calculate deposit hash
-        bytes32 depositHash = keccak256(abi.encodePacked(msg.sender, token, nonce));
+        bytes32 depositHash = keccak256(abi.encodePacked(msg.sender, token, resolver, nonce));
 
         // Check for duplicate deposits
         if (_deposits[depositHash] != 0) revert DuplicateDeposit(depositHash);
@@ -344,14 +344,19 @@ contract SignedVault is
     }
 
     /**
-     * @notice Get deposit amount by user, token, and nonce
+     * @notice Get deposit amount by user, token, resolver, and nonce
      * @param user User address
      * @param token Token address (ETH_ADDRESS for ETH)
+     * @param resolver Resolver address
      * @param nonce User-provided nonce
      * @return amount Deposit amount
      */
-    function getDeposit(address user, address token, uint256 nonce) external view returns (uint256 amount) {
-        bytes32 depositHash = keccak256(abi.encodePacked(user, token, nonce));
+    function getDeposit(address user, address token, address resolver, uint256 nonce)
+        external
+        view
+        returns (uint256 amount)
+    {
+        bytes32 depositHash = keccak256(abi.encodePacked(user, token, resolver, nonce));
         return _deposits[depositHash];
     }
 
