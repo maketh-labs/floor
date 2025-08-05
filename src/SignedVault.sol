@@ -56,8 +56,8 @@ contract SignedVault is
     /// @notice Mapping of resolver balances by token
     mapping(address resolver => mapping(address token => uint256 balance)) public resolverBalanceOf;
 
-    /// @notice Mapping to track deposits by user and nonce for backend verification
-    mapping(address user => mapping(uint256 nonce => uint256 amount)) public deposits;
+    /// @notice Mapping to track deposits by hash of user, token, and nonce for backend verification
+    mapping(bytes32 depositHash => uint256 amount) public deposits;
 
     // @notice Reserved slots for upgradeability
     uint256[50] private __gap; // 50 reserved slots
@@ -87,7 +87,7 @@ contract SignedVault is
     error SignatureExpired();
     error ETHTransferFailed();
     error InvalidResolver();
-    error DuplicateDeposit(address user, uint256 nonce);
+    error DuplicateDeposit(bytes32 depositHash);
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                        CONSTRUCTOR                         */
@@ -117,11 +117,14 @@ contract SignedVault is
     function depositETH(address resolver, uint256 nonce) external payable {
         if (resolver == address(0)) revert InvalidResolver();
 
+        // Calculate deposit hash
+        bytes32 depositHash = keccak256(abi.encodePacked(msg.sender, ETH_ADDRESS, nonce));
+
         // Check for duplicate deposits
-        if (deposits[msg.sender][nonce] != 0) revert DuplicateDeposit(msg.sender, nonce);
+        if (deposits[depositHash] != 0) revert DuplicateDeposit(depositHash);
 
         // Store deposit for backend verification
-        deposits[msg.sender][nonce] = msg.value;
+        deposits[depositHash] = msg.value;
 
         unchecked {
             resolverBalanceOf[resolver][ETH_ADDRESS] += msg.value;
@@ -141,13 +144,16 @@ contract SignedVault is
         if (token == ETH_ADDRESS) revert InvalidAsset();
         if (resolver == address(0)) revert InvalidResolver();
 
+        // Calculate deposit hash
+        bytes32 depositHash = keccak256(abi.encodePacked(msg.sender, token, nonce));
+
         // Check for duplicate deposits
-        if (deposits[msg.sender][nonce] != 0) revert DuplicateDeposit(msg.sender, nonce);
+        if (deposits[depositHash] != 0) revert DuplicateDeposit(depositHash);
 
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
 
         // Store deposit for backend verification
-        deposits[msg.sender][nonce] = amount;
+        deposits[depositHash] = amount;
 
         resolverBalanceOf[resolver][token] += amount;
         emit Deposit(msg.sender, token, amount, nonce);
@@ -172,8 +178,11 @@ contract SignedVault is
         if (token == ETH_ADDRESS) revert InvalidAsset();
         if (resolver == address(0)) revert InvalidResolver();
 
+        // Calculate deposit hash
+        bytes32 depositHash = keccak256(abi.encodePacked(msg.sender, token, nonce));
+
         // Check for duplicate deposits
-        if (deposits[msg.sender][nonce] != 0) revert DuplicateDeposit(msg.sender, nonce);
+        if (deposits[depositHash] != 0) revert DuplicateDeposit(depositHash);
 
         // Create transfer details - use full permitted amount
         ISignatureTransfer.SignatureTransferDetails memory transferDetails =
@@ -183,7 +192,7 @@ contract SignedVault is
         PERMIT2.permitTransferFrom(permit, transferDetails, msg.sender, signature);
 
         // Store deposit for backend verification
-        deposits[msg.sender][nonce] = amount;
+        deposits[depositHash] = amount;
 
         resolverBalanceOf[resolver][token] += amount;
         emit Deposit(msg.sender, token, amount, nonce);
