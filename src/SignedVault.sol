@@ -17,9 +17,9 @@ import {ISignatureTransfer} from "permit2/src/interfaces/ISignatureTransfer.sol"
  *
  * Features:
  * - Deposits of ETH and ERC20 tokens to specific resolvers
- * - Resolver-authorized withdrawals using EIP-712 signatures
+ * - Resolver-authorized withdrawals using EIP-712 signatures with nonce
  * - Permit2 integration for gasless ERC20 approvals
- * - Nonce-based replay protection
+ * - Nonce-based replay protection for withdrawals
  * - Resolver balance tracking to prevent over-withdrawals
  * - Decentralized resolver system (no global backend signer)
  */
@@ -44,14 +44,14 @@ contract SignedVault is
 
     /// @notice EIP-712 type hash for withdrawal authorization
     bytes32 public constant WITHDRAW_TYPEHASH =
-        keccak256("Withdraw(address user,address token,uint256 amount,address resolver,uint256 deadline)");
+        keccak256("Withdraw(address user,address token,uint256 amount,address resolver,uint256 nonce,uint256 deadline)");
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                      STATE VARIABLES                       */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @notice Mapping to track used signatures to prevent replay attacks
-    mapping(bytes32 signatureHash => bool used) public usedSignatures;
+    /// @notice Mapping to track used nonces per resolver to prevent replay attacks
+    mapping(address resolver => mapping(uint256 nonce => bool used)) public usedNonces;
 
     /// @notice Mapping of resolver balances by token
     mapping(address resolver => mapping(address token => uint256 balance)) public resolverBalanceOf;
@@ -72,14 +72,14 @@ contract SignedVault is
     /// @notice Emitted when a user withdraws funds
     event Withdraw(address user, address token, uint256 amount);
 
-    /// @notice Emitted when a resolver cancels a signature
-    event SignatureCancelled(address resolver, bytes signature);
+    /// @notice Emitted when a resolver cancels a nonce
+    event NonceCancelled(address resolver, uint256 nonce);
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                           ERRORS                           */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    error SignatureAlreadyUsed(bytes32 signatureHash);
+    error NonceAlreadyUsed(address resolver, uint256 nonce);
     error InvalidAmount(uint256 amount);
     error InvalidAsset();
     error InsufficientResolverBalance(address resolver, address token, uint256 required, uint256 available);
@@ -199,41 +199,24 @@ contract SignedVault is
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-    /*                    SIGNATURE MANAGEMENT                    */
+    /*                    NONCE MANAGEMENT                        */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /**
-     * @notice Cancel a withdrawal signature to prevent its future use
-     * @dev Only the resolver who signed the signature can cancel it
-     * @param user Address of the user in the original signature
-     * @param token Token address in the original signature (ETH_ADDRESS for ETH)
-     * @param amount Amount in the original signature
-     * @param deadline Deadline in the original signature
-     * @param signature The signature to cancel
+     * @notice Cancel a nonce to prevent its future use for withdrawals
+     * @dev Only the resolver can cancel their own nonces
+     * @param nonce The nonce to cancel
      */
-    function cancelSignature(address user, address token, uint256 amount, uint256 deadline, bytes calldata signature)
-        external
-    {
-        // Check if signature has already been used or cancelled
-        bytes32 signatureHash = keccak256(signature);
-        if (usedSignatures[signatureHash]) {
-            revert SignatureAlreadyUsed(signatureHash);
+    function cancel(uint256 nonce) external {
+        // Check if nonce has already been used
+        if (usedNonces[msg.sender][nonce]) {
+            revert NonceAlreadyUsed(msg.sender, nonce);
         }
 
-        // Reconstruct the message hash from the original parameters
-        bytes32 messageHash =
-            _hashTypedDataV4(keccak256(abi.encode(WITHDRAW_TYPEHASH, user, token, amount, msg.sender, deadline)));
+        // Mark the nonce as used to prevent its future use
+        usedNonces[msg.sender][nonce] = true;
 
-        // Verify that the caller is the resolver who signed this signature
-        address recoveredSigner = ECDSA.recover(messageHash, signature);
-        if (recoveredSigner == address(0) || recoveredSigner != msg.sender) {
-            revert InvalidSignature();
-        }
-
-        // Mark the signature hash as used to prevent its future use
-        usedSignatures[signatureHash] = true;
-
-        emit SignatureCancelled(msg.sender, signature);
+        emit NonceCancelled(msg.sender, nonce);
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -245,14 +228,19 @@ contract SignedVault is
      * @param user Address of the user to withdraw to
      * @param amount Amount to withdraw
      * @param resolver Address of the resolver authorizing this withdrawal
+     * @param nonce Nonce for this withdrawal to prevent replay attacks
      * @param deadline Latest timestamp this signature is valid for
      * @param signature Resolver signature authorizing this withdrawal
      */
-    function withdrawETH(address user, uint256 amount, address resolver, uint256 deadline, bytes calldata signature)
-        external
-        nonReentrant
-    {
-        _withdraw(user, ETH_ADDRESS, amount, resolver, deadline, signature);
+    function withdrawETH(
+        address user,
+        uint256 amount,
+        address resolver,
+        uint256 nonce,
+        uint256 deadline,
+        bytes calldata signature
+    ) external nonReentrant {
+        _withdraw(user, ETH_ADDRESS, amount, resolver, nonce, deadline, signature);
     }
 
     /**
@@ -261,6 +249,7 @@ contract SignedVault is
      * @param token Token address
      * @param amount Amount to withdraw
      * @param resolver Address of the resolver authorizing this withdrawal
+     * @param nonce Nonce for this withdrawal to prevent replay attacks
      * @param deadline Latest timestamp this signature is valid for
      * @param signature Resolver signature authorizing this withdrawal
      */
@@ -269,11 +258,12 @@ contract SignedVault is
         address token,
         uint256 amount,
         address resolver,
+        uint256 nonce,
         uint256 deadline,
         bytes calldata signature
     ) external nonReentrant {
         if (token == ETH_ADDRESS) revert InvalidAsset();
-        _withdraw(user, token, amount, resolver, deadline, signature);
+        _withdraw(user, token, amount, resolver, nonce, deadline, signature);
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -286,7 +276,8 @@ contract SignedVault is
      * @param token Token address (ETH_ADDRESS for ETH)
      * @param amount Amount to withdraw
      * @param resolver Address of the resolver authorizing withdrawal
-     * @param deadline Signature deadline, doubles as nonce
+     * @param nonce Nonce for this withdrawal
+     * @param deadline Signature deadline
      * @param signature Resolver signature
      */
     function _withdraw(
@@ -294,6 +285,7 @@ contract SignedVault is
         address token,
         uint256 amount,
         address resolver,
+        uint256 nonce,
         uint256 deadline,
         bytes calldata signature
     ) internal {
@@ -301,15 +293,12 @@ contract SignedVault is
         if (amount == 0) revert InvalidAmount(amount);
         if (resolver == address(0)) revert InvalidResolver();
 
+        // Check if nonce has already been used
+        if (usedNonces[resolver][nonce]) revert NonceAlreadyUsed(resolver, nonce);
+
         // Verify resolver signature
         bytes32 messageHash =
-            _hashTypedDataV4(keccak256(abi.encode(WITHDRAW_TYPEHASH, user, token, amount, resolver, deadline)));
-
-        // Check if signature has been used before (includes cancelled signatures)
-        // @review: It is allowed to use signatureHash as a unique identifier here because Solady/OZ removed the possibility of mutating the signature, but still, it is an anti-pattern.
-        // So I'm not going to mention it's an issue, but just remind this and double-check with the audit team.
-        bytes32 signatureHash = keccak256(signature);
-        if (usedSignatures[signatureHash]) revert SignatureAlreadyUsed(signatureHash);
+            _hashTypedDataV4(keccak256(abi.encode(WITHDRAW_TYPEHASH, user, token, amount, resolver, nonce, deadline)));
 
         // Check resolver has sufficient balance
         uint256 resolverBalance = resolverBalanceOf[resolver][token];
@@ -322,8 +311,8 @@ contract SignedVault is
             revert InvalidSignature();
         }
 
-        // Mark signature as used
-        usedSignatures[signatureHash] = true;
+        // Mark nonce as used
+        usedNonces[resolver][nonce] = true;
 
         // Deduct from resolver's balance
         unchecked {
