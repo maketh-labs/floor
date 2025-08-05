@@ -7,7 +7,7 @@ import {SignedVault} from "../src/SignedVault.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract DeploySignedVault is Script {
-    function prepare() public {
+    function deployImplementation() public {
         vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
         SignedVault implementation = new SignedVault(vm.envAddress("PERMIT2"));
         vm.stopBroadcast();
@@ -15,7 +15,7 @@ contract DeploySignedVault is Script {
         console.log("SignedVault implementation deployed at:", address(implementation));
     }
 
-    function run(address payable implementation) public returns (address proxy) {
+    function deploy(address payable implementation) public returns (address proxy) {
         vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
 
         // Deploy the proxy contract
@@ -39,5 +39,12 @@ contract DeploySignedVault is Script {
         console.log("SignedVault proxy PERMIT2:", address(signedVaultProxy.PERMIT2()));
 
         return proxy;
+    }
+
+    function upgrade(address proxy, address implementation) public {
+        vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
+        SignedVault(payable(proxy)).upgradeToAndCall(implementation, "");
+        console.log("SignedVault proxy upgraded to:", implementation);
+        vm.stopBroadcast();
     }
 }

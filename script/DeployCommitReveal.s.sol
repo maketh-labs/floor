@@ -7,7 +7,7 @@ import {CommitReveal} from "../src/CommitReveal.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract DeployCommitReveal is Script {
-    function prepare() public {
+    function deployImplementation() public {
         vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
         CommitReveal implementation = new CommitReveal(vm.envAddress("PERMIT2"));
         vm.stopBroadcast();
@@ -15,7 +15,7 @@ contract DeployCommitReveal is Script {
         console.log("CommitReveal implementation deployed at:", address(implementation));
     }
 
-    function run(address payable implementation) public returns (address proxy) {
+    function deploy(address payable implementation) public returns (address proxy) {
         vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
 
         // Deploy the proxy contract
@@ -39,5 +39,12 @@ contract DeployCommitReveal is Script {
         console.log("CommitReveal proxy PERMIT2:", address(commitRevealProxy.PERMIT2()));
 
         return proxy;
+    }
+
+    function upgrade(address proxy, address implementation) public {
+        vm.startBroadcast(vm.envUint("PRIVATE_KEY"));
+        CommitReveal(payable(proxy)).upgradeToAndCall(implementation, "");
+        console.log("CommitReveal proxy upgraded to:", implementation);
+        vm.stopBroadcast();
     }
 }
