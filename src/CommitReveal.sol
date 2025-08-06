@@ -243,6 +243,7 @@ contract CommitReveal is
     ) external nonReentrant {
         if (block.timestamp > params.deadline) revert SignatureExpired();
         if (params.betAmount == 0) revert InvalidAmount(params.betAmount);
+        if (params.token == ETH_ADDRESS) revert InvalidAsset();
 
         // Calculate game ID from signature hash
         bytes32 gameId = keccak256(serverSignature);
