@@ -101,8 +101,10 @@ contract SignedVault is
 
     function initialize(address _owner) public initializer {
         __Ownable_init(_owner);
+        __Ownable2Step_init();
         __ReentrancyGuard_init();
         __EIP712_init("SignedVault", "1");
+        __UUPSUpgradeable_init();
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
