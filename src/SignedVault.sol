@@ -310,7 +310,7 @@ contract SignedVault is
         }
 
         address recoveredSigner = ECDSA.recover(messageHash, signature);
-        if (recoveredSigner == address(0) || recoveredSigner != resolver) {
+        if (recoveredSigner != resolver) {
             revert InvalidSignature();
         }
 

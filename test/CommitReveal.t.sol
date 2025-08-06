@@ -348,15 +348,11 @@ contract CommitRevealTest is Test, DeployPermit2 {
             deadline: deadline
         });
 
-        // Create transfer details
-        ISignatureTransfer.SignatureTransferDetails memory transferDetails =
-            ISignatureTransfer.SignatureTransferDetails({to: address(commitReveal), requestedAmount: betAmount});
-
         bytes memory permitSignature =
             createPermit2Signature(address(token), betAmount, permit2Nonce, deadline, address(commitReveal));
 
         vm.prank(player);
-        commitReveal.createGameWithPermit2(params, signature, SALT, permit, transferDetails, permitSignature);
+        commitReveal.createGameWithPermit2(params, signature, SALT, permit, permitSignature);
 
         // Verify game was created correctly
         assertTrue(commitReveal.usedSignatures(keccak256(signature)));
@@ -396,16 +392,12 @@ contract CommitRevealTest is Test, DeployPermit2 {
             deadline: deadline
         });
 
-        // Create transfer details
-        ISignatureTransfer.SignatureTransferDetails memory transferDetails =
-            ISignatureTransfer.SignatureTransferDetails({to: address(commitReveal), requestedAmount: betAmount});
-
         bytes memory permitSignature =
             createPermit2Signature(address(differentToken), betAmount, permit2Nonce, deadline, address(commitReveal));
 
         vm.prank(player);
         vm.expectRevert(CommitReveal.TokenMismatch.selector);
-        commitReveal.createGameWithPermit2(params, signature, SALT, permit, transferDetails, permitSignature);
+        commitReveal.createGameWithPermit2(params, signature, SALT, permit, permitSignature);
     }
 
     function testCreateGameWithPermit2InsufficientAmount() public {
@@ -436,16 +428,12 @@ contract CommitRevealTest is Test, DeployPermit2 {
             deadline: deadline
         });
 
-        // Create transfer details
-        ISignatureTransfer.SignatureTransferDetails memory transferDetails =
-            ISignatureTransfer.SignatureTransferDetails({to: address(commitReveal), requestedAmount: betAmount});
-
         bytes memory permitSignature =
             createPermit2Signature(address(token), permitAmount, permit2Nonce, deadline, address(commitReveal));
 
         vm.prank(player);
         vm.expectRevert(CommitReveal.InsufficientPermitAmount.selector);
-        commitReveal.createGameWithPermit2(params, signature, SALT, permit, transferDetails, permitSignature);
+        commitReveal.createGameWithPermit2(params, signature, SALT, permit, permitSignature);
     }
 
     function testCreateGameWithPermit2ExpiredDeadline() public {
@@ -475,16 +463,12 @@ contract CommitRevealTest is Test, DeployPermit2 {
             deadline: deadline
         });
 
-        // Create transfer details
-        ISignatureTransfer.SignatureTransferDetails memory transferDetails =
-            ISignatureTransfer.SignatureTransferDetails({to: address(commitReveal), requestedAmount: betAmount});
-
         bytes memory permitSignature =
             createPermit2Signature(address(token), betAmount, permit2Nonce, deadline, address(commitReveal));
 
         vm.prank(player);
         vm.expectRevert(CommitReveal.SignatureExpired.selector);
-        commitReveal.createGameWithPermit2(params, signature, SALT, permit, transferDetails, permitSignature);
+        commitReveal.createGameWithPermit2(params, signature, SALT, permit, permitSignature);
     }
 
     function testCreateGameWithPermit2NonceReuse() public {
@@ -511,106 +495,17 @@ contract CommitRevealTest is Test, DeployPermit2 {
             deadline: deadline
         });
 
-        // Create transfer details
-        ISignatureTransfer.SignatureTransferDetails memory transferDetails =
-            ISignatureTransfer.SignatureTransferDetails({to: address(commitReveal), requestedAmount: betAmount});
-
         bytes memory permitSignature =
             createPermit2Signature(address(token), betAmount, permit2Nonce, deadline, address(commitReveal));
 
         // First call should succeed
         vm.prank(player);
-        commitReveal.createGameWithPermit2(params, signature, SALT, permit, transferDetails, permitSignature);
+        commitReveal.createGameWithPermit2(params, signature, SALT, permit, permitSignature);
 
         // Second call with same nonce should fail
         vm.prank(player);
         vm.expectRevert(abi.encodeWithSelector(CommitReveal.SignatureAlreadyUsed.selector, keccak256(signature)));
-        commitReveal.createGameWithPermit2(params, signature, SALT, permit, transferDetails, permitSignature);
-    }
-
-    function testCreateGameWithPermit2InvalidTransferDestination() public {
-        uint256 deadline = block.timestamp + 1 hours;
-        uint256 permit2Nonce = 0;
-        uint256 betAmount = 100 * 10 ** 18;
-
-        CommitReveal.CreateGameParams memory params = CommitReveal.CreateGameParams({
-            token: address(token),
-            betAmount: betAmount,
-            gameSeedHash: GAME_SEED_HASH,
-            algorithm: ALGORITHM,
-            gameConfig: GAME_CONFIG,
-            resolver: resolver,
-            deadline: deadline
-        });
-
-        bytes memory signature = createGameSignature(params, player);
-
-        // Create Permit2 permit
-        ISignatureTransfer.PermitTransferFrom memory permit = ISignatureTransfer.PermitTransferFrom({
-            permitted: ISignatureTransfer.TokenPermissions({token: address(token), amount: betAmount}),
-            nonce: permit2Nonce,
-            deadline: deadline
-        });
-
-        // Create transfer details with wrong destination
-        ISignatureTransfer.SignatureTransferDetails memory transferDetails = ISignatureTransfer.SignatureTransferDetails({
-            to: address(0x1234), // Wrong destination
-            requestedAmount: betAmount
-        });
-
-        bytes memory permitSignature = createPermit2Signature(
-            address(token),
-            betAmount,
-            permit2Nonce,
-            deadline,
-            address(0x1234) // Wrong destination
-        );
-
-        vm.prank(player);
-        vm.expectRevert(CommitReveal.InvalidPermitTransfer.selector);
-        commitReveal.createGameWithPermit2(params, signature, SALT, permit, transferDetails, permitSignature);
-    }
-
-    function testCreateGameWithPermit2InvalidRequestedAmount() public {
-        uint256 deadline = block.timestamp + 1 hours;
-        uint256 permit2Nonce = 0;
-        uint256 betAmount = 100 * 10 ** 18;
-        uint256 wrongAmount = 50 * 10 ** 18; // Different from bet amount
-
-        CommitReveal.CreateGameParams memory params = CommitReveal.CreateGameParams({
-            token: address(token),
-            betAmount: betAmount,
-            gameSeedHash: GAME_SEED_HASH,
-            algorithm: ALGORITHM,
-            gameConfig: GAME_CONFIG,
-            resolver: resolver,
-            deadline: deadline
-        });
-
-        bytes memory signature = createGameSignature(params, player);
-
-        // Create Permit2 permit with sufficient amount
-        ISignatureTransfer.PermitTransferFrom memory permit = ISignatureTransfer.PermitTransferFrom({
-            permitted: ISignatureTransfer.TokenPermissions({
-                token: address(token),
-                amount: betAmount // Sufficient amount
-            }),
-            nonce: permit2Nonce,
-            deadline: deadline
-        });
-
-        // Create transfer details with wrong requested amount
-        ISignatureTransfer.SignatureTransferDetails memory transferDetails = ISignatureTransfer.SignatureTransferDetails({
-            to: address(commitReveal),
-            requestedAmount: wrongAmount // Different from bet amount
-        });
-
-        bytes memory permitSignature =
-            createPermit2Signature(address(token), betAmount, permit2Nonce, deadline, address(commitReveal));
-
-        vm.prank(player);
-        vm.expectRevert(abi.encodeWithSelector(CommitReveal.InvalidAmount.selector, wrongAmount));
-        commitReveal.createGameWithPermit2(params, signature, SALT, permit, transferDetails, permitSignature);
+        commitReveal.createGameWithPermit2(params, signature, SALT, permit, permitSignature);
     }
 
     function testCreateGameETHNonceReuse() public {

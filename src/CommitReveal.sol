@@ -155,9 +155,7 @@ contract CommitReveal is
     error InsufficientContractBalance(address token, uint256 required, uint256 available);
     error InvalidAmount(uint256 amount);
     error InvalidAsset();
-    error InvalidPermitTransfer();
     error SignatureExpired();
-    error InvalidSignature();
     error TokenMismatch();
     error InsufficientPermitAmount();
     error ETHTransferFailed();
@@ -232,7 +230,6 @@ contract CommitReveal is
      * @param serverSignature Signature from the server authorizing this game creation
      * @param salt User-provided entropy to prevent seed premining (not part of server signature)
      * @param permit Permit2 permit data signed by the player
-     * @param transferDetails Details of the token transfer (to, requestedAmount)
      * @param permitSignature Player's signature for the Permit2 transfer
      */
     function createGameWithPermit2(
@@ -240,7 +237,6 @@ contract CommitReveal is
         bytes calldata serverSignature,
         bytes32 salt,
         ISignatureTransfer.PermitTransferFrom memory permit,
-        ISignatureTransfer.SignatureTransferDetails calldata transferDetails,
         bytes calldata permitSignature
     ) external nonReentrant {
         if (block.timestamp > params.deadline) revert SignatureExpired();
@@ -262,9 +258,8 @@ contract CommitReveal is
         // Verify permit amount is sufficient
         if (permit.permitted.amount < params.betAmount) revert InsufficientPermitAmount();
 
-        // Verify transfer details are safe
-        if (transferDetails.to != address(this)) revert InvalidPermitTransfer();
-        if (transferDetails.requestedAmount != params.betAmount) revert InvalidAmount(transferDetails.requestedAmount);
+        ISignatureTransfer.SignatureTransferDetails memory transferDetails =
+            ISignatureTransfer.SignatureTransferDetails({to: address(this), requestedAmount: params.betAmount});
 
         // Transfer tokens using Permit2
         PERMIT2.permitTransferFrom(permit, transferDetails, msg.sender, permitSignature);
@@ -304,7 +299,7 @@ contract CommitReveal is
             bytes32 messageHash = _hashTypedDataV4(
                 keccak256(abi.encode(CASH_OUT_TYPEHASH, gameId, payoutAmount, gameState, gameSeed, deadline))
             );
-            if (_verifyAndGetResolver(messageHash, serverSignature) != game.resolver) revert InvalidResolverSignature();
+            if (ECDSA.recover(messageHash, serverSignature) != game.resolver) revert InvalidResolverSignature();
         }
 
         // Check resolver has sufficient balance
@@ -365,7 +360,7 @@ contract CommitReveal is
             bytes32 messageHash = _hashTypedDataV4(
                 keccak256(abi.encode(MARK_GAME_AS_LOST_TYPEHASH, gameId, gameState, gameSeed, deadline))
             );
-            if (_verifyAndGetResolver(messageHash, serverSignature) != game.resolver) revert InvalidResolverSignature();
+            if (ECDSA.recover(messageHash, serverSignature) != game.resolver) revert InvalidResolverSignature();
         }
 
         // Update game state
@@ -478,20 +473,6 @@ contract CommitReveal is
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /**
-     * @dev Verifies signature and returns the resolver address
-     * @param _hash The hash that was signed
-     * @param _signature The signature bytes
-     * @return resolver The address of the resolver who signed
-     */
-    function _verifyAndGetResolver(bytes32 _hash, bytes calldata _signature) internal pure returns (address) {
-        address recoveredSigner = ECDSA.recover(_hash, _signature);
-        if (recoveredSigner == address(0)) {
-            revert InvalidResolverSignature();
-        }
-        return recoveredSigner;
-    }
-
-    /**
      * @dev Verifies the signature of a game creation request and returns the resolver address.
      * @param params Game creation parameters struct
      * @param player The address of the player creating the game.
@@ -518,7 +499,7 @@ contract CommitReveal is
                 )
             )
         );
-        address recoveredAddress = _verifyAndGetResolver(messageHash, serverSignature);
+        address recoveredAddress = ECDSA.recover(messageHash, serverSignature);
 
         // Verify that the recovered address matches the resolver address in params
         if (recoveredAddress != params.resolver) {
