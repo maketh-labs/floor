@@ -348,7 +348,7 @@ contract CommitReveal is
         bytes32 gameSeed,
         uint256 deadline,
         bytes calldata serverSignature
-    ) external {
+    ) external nonReentrant {
         Game storage game = _games[gameId];
         if (game.status == GameStatus.None) {
             revert GameDoesNotExist(gameId);
