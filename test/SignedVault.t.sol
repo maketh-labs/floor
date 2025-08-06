@@ -270,6 +270,20 @@ contract SignedVaultTest is Test, DeployPermit2 {
         signedVault.deposit(address(token), TOKEN_DEPOSIT_AMOUNT, resolver1, nonce);
     }
 
+    function testDepositETHZeroAmount() public {
+        uint256 nonce = 1;
+        vm.prank(user);
+        vm.expectRevert(abi.encodeWithSelector(SignedVault.InvalidAmount.selector, 0));
+        signedVault.depositETH{value: 0}(resolver1, nonce);
+    }
+
+    function testDepositERC20ZeroAmount() public {
+        uint256 nonce = 1;
+        vm.prank(user);
+        vm.expectRevert(abi.encodeWithSelector(SignedVault.InvalidAmount.selector, 0));
+        signedVault.deposit(address(token), 0, resolver1, nonce);
+    }
+
     // ============ PERMIT2 DEPOSIT TESTS ============
 
     function testDepositWithPermit2() public {
@@ -360,6 +374,27 @@ contract SignedVaultTest is Test, DeployPermit2 {
         vm.expectRevert(abi.encodeWithSelector(SignedVault.DuplicateDeposit.selector, expectedHash));
         vm.prank(user);
         signedVault.depositWithPermit2(resolver1, permitSecond, permitSignature2, userNonce);
+    }
+
+    function testDepositWithPermit2ZeroAmount() public {
+        uint256 nonce = 0;
+        uint256 userNonce = 1;
+        uint256 deadline = block.timestamp + 1 hours;
+        uint256 amount = 0; // Zero amount
+
+        // Create Permit2 permit with zero amount
+        ISignatureTransfer.PermitTransferFrom memory permit = ISignatureTransfer.PermitTransferFrom({
+            permitted: ISignatureTransfer.TokenPermissions({token: address(token), amount: amount}),
+            nonce: nonce,
+            deadline: deadline
+        });
+
+        bytes memory permitSignature =
+            createPermit2Signature(address(token), amount, nonce, deadline, address(signedVault));
+
+        vm.prank(user);
+        vm.expectRevert(abi.encodeWithSelector(SignedVault.InvalidAmount.selector, 0));
+        signedVault.depositWithPermit2(resolver1, permit, permitSignature, userNonce);
     }
 
     // ============ WITHDRAWAL TESTS ============

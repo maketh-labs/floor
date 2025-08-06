@@ -101,8 +101,10 @@ contract SignedVault is
 
     function initialize(address _owner) public initializer {
         __Ownable_init(_owner);
+        __Ownable2Step_init();
         __ReentrancyGuard_init();
         __EIP712_init("SignedVault", "1");
+        __UUPSUpgradeable_init();
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -116,6 +118,7 @@ contract SignedVault is
      */
     function depositETH(address resolver, uint256 nonce) external payable nonReentrant {
         if (resolver == address(0)) revert InvalidResolver();
+        if (msg.value == 0) revert InvalidAmount(msg.value);
 
         // Calculate deposit hash
         bytes32 depositHash = keccak256(abi.encodePacked(msg.sender, ETH_ADDRESS, resolver, nonce));
@@ -143,6 +146,7 @@ contract SignedVault is
     function deposit(address token, uint256 amount, address resolver, uint256 nonce) external nonReentrant {
         if (token == ETH_ADDRESS) revert InvalidAsset();
         if (resolver == address(0)) revert InvalidResolver();
+        if (amount == 0) revert InvalidAmount(amount);
 
         // Calculate deposit hash
         bytes32 depositHash = keccak256(abi.encodePacked(msg.sender, token, resolver, nonce));
@@ -177,6 +181,7 @@ contract SignedVault is
 
         if (token == ETH_ADDRESS) revert InvalidAsset();
         if (resolver == address(0)) revert InvalidResolver();
+        if (permit.permitted.amount == 0) revert InvalidAmount(permit.permitted.amount);
 
         // Calculate deposit hash
         bytes32 depositHash = keccak256(abi.encodePacked(msg.sender, token, resolver, nonce));
@@ -307,7 +312,7 @@ contract SignedVault is
         }
 
         address recoveredSigner = ECDSA.recover(messageHash, signature);
-        if (recoveredSigner == address(0) || recoveredSigner != resolver) {
+        if (recoveredSigner != resolver) {
             revert InvalidSignature();
         }
 

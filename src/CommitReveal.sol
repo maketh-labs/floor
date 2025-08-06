@@ -44,7 +44,7 @@ contract CommitReveal is
 
     /// @notice EIP-712 type hashes
     bytes32 public constant CREATE_GAME_TYPEHASH = keccak256(
-        "CreateGame(address token,uint256 betAmount,bytes32 gameSeedHash,bytes32 algorithm,bytes32 gameConfig,address player,uint256 deadline)"
+        "CreateGame(address token,uint256 betAmount,bytes32 gameSeedHash,bytes32 algorithm,bytes32 gameConfig,address player,address resolver,uint256 deadline)"
     );
 
     bytes32 public constant CASH_OUT_TYPEHASH =
@@ -64,6 +64,7 @@ contract CommitReveal is
         bytes32 gameSeedHash;
         bytes32 algorithm;
         bytes32 gameConfig;
+        address resolver;
         uint256 deadline;
     }
 
@@ -76,9 +77,6 @@ contract CommitReveal is
 
     /// @notice Mapping of resolver balances by token
     mapping(address resolver => mapping(address token => uint256 balance)) public balanceOf;
-
-    /// @notice Reserved slots for upgradeability
-    uint256[50] private __gap; // 50 reserved slots
 
     /// @notice Game status enum
     enum GameStatus {
@@ -107,6 +105,9 @@ contract CommitReveal is
 
     /// @notice Mapping from game signature hash to Game data
     mapping(bytes32 signatureHash => Game game) internal _games;
+
+    /// @notice Reserved slots for upgradeability
+    uint256[50] private __gap; // 50 reserved slots
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                           EVENTS                           */
@@ -154,9 +155,7 @@ contract CommitReveal is
     error InsufficientContractBalance(address token, uint256 required, uint256 available);
     error InvalidAmount(uint256 amount);
     error InvalidAsset();
-    error InvalidPermitTransfer();
     error SignatureExpired();
-    error InvalidSignature();
     error TokenMismatch();
     error InsufficientPermitAmount();
     error ETHTransferFailed();
@@ -173,8 +172,10 @@ contract CommitReveal is
 
     function initialize(address _owner) public initializer {
         __Ownable_init(_owner);
+        __Ownable2Step_init();
         __ReentrancyGuard_init();
         __EIP712_init("CommitReveal", "1");
+        __UUPSUpgradeable_init();
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -212,7 +213,7 @@ contract CommitReveal is
         }
 
         // Verify resolver signature
-        address resolver = _verifyCreateGameSignature(params, msg.sender, serverSignature);
+        _verifyCreateGameSignature(params, msg.sender, serverSignature);
 
         // Handle asset transfer
         if (params.token == ETH_ADDRESS) {
@@ -222,7 +223,7 @@ contract CommitReveal is
             IERC20(params.token).safeTransferFrom(msg.sender, address(this), params.betAmount);
         }
 
-        _createGame(params, resolver, msg.sender, gameId, salt);
+        _createGame(params, params.resolver, msg.sender, gameId, salt);
     }
 
     /**
@@ -231,7 +232,6 @@ contract CommitReveal is
      * @param serverSignature Signature from the server authorizing this game creation
      * @param salt User-provided entropy to prevent seed premining (not part of server signature)
      * @param permit Permit2 permit data signed by the player
-     * @param transferDetails Details of the token transfer (to, requestedAmount)
      * @param permitSignature Player's signature for the Permit2 transfer
      */
     function createGameWithPermit2(
@@ -239,11 +239,11 @@ contract CommitReveal is
         bytes calldata serverSignature,
         bytes32 salt,
         ISignatureTransfer.PermitTransferFrom memory permit,
-        ISignatureTransfer.SignatureTransferDetails calldata transferDetails,
         bytes calldata permitSignature
     ) external nonReentrant {
         if (block.timestamp > params.deadline) revert SignatureExpired();
         if (params.betAmount == 0) revert InvalidAmount(params.betAmount);
+        if (params.token == ETH_ADDRESS) revert InvalidAsset();
 
         // Calculate game ID from signature hash
         bytes32 gameId = keccak256(serverSignature);
@@ -253,7 +253,7 @@ contract CommitReveal is
         }
 
         // Verify resolver signature
-        address resolver = _verifyCreateGameSignature(params, msg.sender, serverSignature);
+        _verifyCreateGameSignature(params, msg.sender, serverSignature);
 
         // Verify permit token matches params
         if (permit.permitted.token != params.token) revert TokenMismatch();
@@ -261,14 +261,13 @@ contract CommitReveal is
         // Verify permit amount is sufficient
         if (permit.permitted.amount < params.betAmount) revert InsufficientPermitAmount();
 
-        // Verify transfer details are safe
-        if (transferDetails.to != address(this)) revert InvalidPermitTransfer();
-        if (transferDetails.requestedAmount != params.betAmount) revert InvalidAmount(transferDetails.requestedAmount);
+        ISignatureTransfer.SignatureTransferDetails memory transferDetails =
+            ISignatureTransfer.SignatureTransferDetails({to: address(this), requestedAmount: params.betAmount});
 
         // Transfer tokens using Permit2
         PERMIT2.permitTransferFrom(permit, transferDetails, msg.sender, permitSignature);
 
-        _createGame(params, resolver, msg.sender, gameId, salt);
+        _createGame(params, params.resolver, msg.sender, gameId, salt);
     }
 
     /**
@@ -303,7 +302,7 @@ contract CommitReveal is
             bytes32 messageHash = _hashTypedDataV4(
                 keccak256(abi.encode(CASH_OUT_TYPEHASH, gameId, payoutAmount, gameState, gameSeed, deadline))
             );
-            if (_verifyAndGetResolver(messageHash, serverSignature) != game.resolver) revert InvalidResolverSignature();
+            if (ECDSA.recover(messageHash, serverSignature) != game.resolver) revert InvalidResolverSignature();
         }
 
         // Check resolver has sufficient balance
@@ -349,7 +348,7 @@ contract CommitReveal is
         bytes32 gameSeed,
         uint256 deadline,
         bytes calldata serverSignature
-    ) external {
+    ) external nonReentrant {
         Game storage game = _games[gameId];
         if (game.status == GameStatus.None) {
             revert GameDoesNotExist(gameId);
@@ -364,7 +363,7 @@ contract CommitReveal is
             bytes32 messageHash = _hashTypedDataV4(
                 keccak256(abi.encode(MARK_GAME_AS_LOST_TYPEHASH, gameId, gameState, gameSeed, deadline))
             );
-            if (_verifyAndGetResolver(messageHash, serverSignature) != game.resolver) revert InvalidResolverSignature();
+            if (ECDSA.recover(messageHash, serverSignature) != game.resolver) revert InvalidResolverSignature();
         }
 
         // Update game state
@@ -477,20 +476,6 @@ contract CommitReveal is
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /**
-     * @dev Verifies signature and returns the resolver address
-     * @param _hash The hash that was signed
-     * @param _signature The signature bytes
-     * @return resolver The address of the resolver who signed
-     */
-    function _verifyAndGetResolver(bytes32 _hash, bytes calldata _signature) internal pure returns (address) {
-        address recoveredSigner = ECDSA.recover(_hash, _signature);
-        if (recoveredSigner == address(0)) {
-            revert InvalidResolverSignature();
-        }
-        return recoveredSigner;
-    }
-
-    /**
      * @dev Verifies the signature of a game creation request and returns the resolver address.
      * @param params Game creation parameters struct
      * @param player The address of the player creating the game.
@@ -512,11 +497,19 @@ contract CommitReveal is
                     params.algorithm,
                     params.gameConfig,
                     player,
+                    params.resolver,
                     params.deadline
                 )
             )
         );
-        return _verifyAndGetResolver(messageHash, serverSignature);
+        address recoveredAddress = ECDSA.recover(messageHash, serverSignature);
+
+        // Verify that the recovered address matches the resolver address in params
+        if (recoveredAddress != params.resolver) {
+            revert InvalidResolverSignature();
+        }
+
+        return recoveredAddress;
     }
 
     /**
