@@ -44,7 +44,7 @@ contract CommitReveal is
 
     /// @notice EIP-712 type hashes
     bytes32 public constant CREATE_GAME_TYPEHASH = keccak256(
-        "CreateGame(address token,uint256 betAmount,bytes32 gameSeedHash,bytes32 algorithm,bytes32 gameConfig,address player,uint256 deadline)"
+        "CreateGame(address token,uint256 betAmount,bytes32 gameSeedHash,bytes32 algorithm,bytes32 gameConfig,address player,address resolver,uint256 deadline)"
     );
 
     bytes32 public constant CASH_OUT_TYPEHASH =
@@ -64,6 +64,7 @@ contract CommitReveal is
         bytes32 gameSeedHash;
         bytes32 algorithm;
         bytes32 gameConfig;
+        address resolver;
         uint256 deadline;
     }
 
@@ -212,7 +213,7 @@ contract CommitReveal is
         }
 
         // Verify resolver signature
-        address resolver = _verifyCreateGameSignature(params, msg.sender, serverSignature);
+        _verifyCreateGameSignature(params, msg.sender, serverSignature);
 
         // Handle asset transfer
         if (params.token == ETH_ADDRESS) {
@@ -222,7 +223,7 @@ contract CommitReveal is
             IERC20(params.token).safeTransferFrom(msg.sender, address(this), params.betAmount);
         }
 
-        _createGame(params, resolver, msg.sender, gameId, salt);
+        _createGame(params, params.resolver, msg.sender, gameId, salt);
     }
 
     /**
@@ -253,7 +254,7 @@ contract CommitReveal is
         }
 
         // Verify resolver signature
-        address resolver = _verifyCreateGameSignature(params, msg.sender, serverSignature);
+        _verifyCreateGameSignature(params, msg.sender, serverSignature);
 
         // Verify permit token matches params
         if (permit.permitted.token != params.token) revert TokenMismatch();
@@ -268,7 +269,7 @@ contract CommitReveal is
         // Transfer tokens using Permit2
         PERMIT2.permitTransferFrom(permit, transferDetails, msg.sender, permitSignature);
 
-        _createGame(params, resolver, msg.sender, gameId, salt);
+        _createGame(params, params.resolver, msg.sender, gameId, salt);
     }
 
     /**
@@ -512,11 +513,19 @@ contract CommitReveal is
                     params.algorithm,
                     params.gameConfig,
                     player,
+                    params.resolver,
                     params.deadline
                 )
             )
         );
-        return _verifyAndGetResolver(messageHash, serverSignature);
+        address recoveredAddress = _verifyAndGetResolver(messageHash, serverSignature);
+
+        // Verify that the recovered address matches the resolver address in params
+        if (recoveredAddress != params.resolver) {
+            revert InvalidResolverSignature();
+        }
+
+        return recoveredAddress;
     }
 
     /**

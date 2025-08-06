@@ -38,7 +38,7 @@ contract CommitRevealTest is Test, DeployPermit2 {
 
     // Type hashes
     bytes32 public constant CREATE_GAME_TYPEHASH = keccak256(
-        "CreateGame(address token,uint256 betAmount,bytes32 gameSeedHash,bytes32 algorithm,bytes32 gameConfig,address player,uint256 deadline)"
+        "CreateGame(address token,uint256 betAmount,bytes32 gameSeedHash,bytes32 algorithm,bytes32 gameConfig,address player,address resolver,uint256 deadline)"
     );
 
     bytes32 public constant PERMIT_TRANSFER_FROM_TYPEHASH = keccak256(
@@ -114,6 +114,7 @@ contract CommitRevealTest is Test, DeployPermit2 {
                         params.algorithm,
                         params.gameConfig,
                         playerAddr,
+                        params.resolver,
                         params.deadline
                     )
                 )
@@ -210,6 +211,7 @@ contract CommitRevealTest is Test, DeployPermit2 {
             gameSeedHash: GAME_SEED_HASH,
             algorithm: ALGORITHM,
             gameConfig: GAME_CONFIG,
+            resolver: resolver,
             deadline: deadline
         });
 
@@ -307,6 +309,7 @@ contract CommitRevealTest is Test, DeployPermit2 {
             gameSeedHash: GAME_SEED_HASH,
             algorithm: ALGORITHM,
             gameConfig: GAME_CONFIG,
+            resolver: resolver,
             deadline: deadline
         });
 
@@ -332,6 +335,7 @@ contract CommitRevealTest is Test, DeployPermit2 {
             gameSeedHash: GAME_SEED_HASH,
             algorithm: ALGORITHM,
             gameConfig: GAME_CONFIG,
+            resolver: resolver,
             deadline: deadline
         });
 
@@ -376,6 +380,7 @@ contract CommitRevealTest is Test, DeployPermit2 {
             gameSeedHash: GAME_SEED_HASH,
             algorithm: ALGORITHM,
             gameConfig: GAME_CONFIG,
+            resolver: resolver,
             deadline: deadline
         });
 
@@ -415,6 +420,7 @@ contract CommitRevealTest is Test, DeployPermit2 {
             gameSeedHash: GAME_SEED_HASH,
             algorithm: ALGORITHM,
             gameConfig: GAME_CONFIG,
+            resolver: resolver,
             deadline: deadline
         });
 
@@ -456,6 +462,7 @@ contract CommitRevealTest is Test, DeployPermit2 {
             gameSeedHash: GAME_SEED_HASH,
             algorithm: ALGORITHM,
             gameConfig: GAME_CONFIG,
+            resolver: resolver,
             deadline: deadline
         });
 
@@ -491,6 +498,7 @@ contract CommitRevealTest is Test, DeployPermit2 {
             gameSeedHash: GAME_SEED_HASH,
             algorithm: ALGORITHM,
             gameConfig: GAME_CONFIG,
+            resolver: resolver,
             deadline: deadline
         });
 
@@ -531,6 +539,7 @@ contract CommitRevealTest is Test, DeployPermit2 {
             gameSeedHash: GAME_SEED_HASH,
             algorithm: ALGORITHM,
             gameConfig: GAME_CONFIG,
+            resolver: resolver,
             deadline: deadline
         });
 
@@ -574,6 +583,7 @@ contract CommitRevealTest is Test, DeployPermit2 {
             gameSeedHash: GAME_SEED_HASH,
             algorithm: ALGORITHM,
             gameConfig: GAME_CONFIG,
+            resolver: resolver,
             deadline: deadline
         });
 
@@ -612,6 +622,7 @@ contract CommitRevealTest is Test, DeployPermit2 {
             gameSeedHash: GAME_SEED_HASH,
             algorithm: ALGORITHM,
             gameConfig: GAME_CONFIG,
+            resolver: resolver,
             deadline: deadline
         });
 
@@ -716,6 +727,29 @@ contract CommitRevealTest is Test, DeployPermit2 {
         commitReveal.markGameAsLost(gameId, LOST_STATE, gameSeed, sigDeadline, sigLost);
 
         assertEq(commitReveal.balanceOf(resolver, address(token)), depositAmount + betAmount);
+    }
+
+    function testCreateGameWithWrongResolverAddress() public {
+        uint256 deadline = block.timestamp + 1 hours;
+        address wrongResolver = address(0x1234); // Different resolver address
+
+        CommitReveal.CreateGameParams memory params = CommitReveal.CreateGameParams({
+            token: address(token),
+            betAmount: 100 * 10 ** 18,
+            gameSeedHash: GAME_SEED_HASH,
+            algorithm: ALGORITHM,
+            gameConfig: GAME_CONFIG,
+            resolver: wrongResolver, // Wrong resolver address
+            deadline: deadline
+        });
+
+        bytes memory signature = createGameSignature(params, player);
+
+        vm.prank(player);
+        token.approve(address(commitReveal), 100 * 10 ** 18);
+        vm.prank(player);
+        vm.expectRevert(CommitReveal.InvalidResolverSignature.selector);
+        commitReveal.createGame(params, signature, SALT);
     }
 
     function testDepositInvalidAmount() public {
