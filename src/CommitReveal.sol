@@ -78,9 +78,6 @@ contract CommitReveal is
     /// @notice Mapping of resolver balances by token
     mapping(address resolver => mapping(address token => uint256 balance)) public balanceOf;
 
-    /// @notice Reserved slots for upgradeability
-    uint256[50] private __gap; // 50 reserved slots
-
     /// @notice Game status enum
     enum GameStatus {
         None, // Default state (0) - game doesn't exist
@@ -108,6 +105,9 @@ contract CommitReveal is
 
     /// @notice Mapping from game signature hash to Game data
     mapping(bytes32 signatureHash => Game game) internal _games;
+
+    /// @notice Reserved slots for upgradeability
+    uint256[50] private __gap; // 50 reserved slots
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                           EVENTS                           */
