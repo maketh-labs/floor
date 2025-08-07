@@ -181,7 +181,7 @@ contract SignedVault is
 
         if (token == ETH_ADDRESS) revert InvalidAsset();
         if (resolver == address(0)) revert InvalidResolver();
-        if (permit.permitted.amount == 0) revert InvalidAmount(permit.permitted.amount);
+        if (amount == 0) revert InvalidAmount(amount);
 
         // Calculate deposit hash
         bytes32 depositHash = keccak256(abi.encodePacked(msg.sender, token, resolver, nonce));
