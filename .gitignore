@@ -21,3 +21,6 @@ docs/
 
 # Context
 context/
+
+# Mac OS files
+.DS_Store
