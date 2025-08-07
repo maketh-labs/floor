@@ -42,7 +42,7 @@ contract SignedVaultTest is Test, DeployPermit2 {
     );
 
     // Events to test
-    event Deposit(address user, address token, uint256 amount, uint256 nonce);
+    event Deposit(address user, address token, address resolver, uint256 amount, uint256 nonce);
     event NonceCancelled(address resolver, uint256 nonce);
     event Withdraw(address user, address token, uint256 amount);
 
@@ -181,7 +181,7 @@ contract SignedVaultTest is Test, DeployPermit2 {
 
         // Expect the Deposit event with nonce
         vm.expectEmit(true, true, true, true);
-        emit Deposit(user, signedVault.ETH_ADDRESS(), DEPOSIT_AMOUNT, nonce);
+        emit Deposit(user, signedVault.ETH_ADDRESS(), resolver1, DEPOSIT_AMOUNT, nonce);
 
         vm.prank(user);
         signedVault.depositETH{value: DEPOSIT_AMOUNT}(resolver1, nonce);
@@ -225,7 +225,7 @@ contract SignedVaultTest is Test, DeployPermit2 {
 
         // Expect the Deposit event with nonce
         vm.expectEmit(true, true, true, true);
-        emit Deposit(user, address(token), TOKEN_DEPOSIT_AMOUNT, nonce);
+        emit Deposit(user, address(token), resolver1, TOKEN_DEPOSIT_AMOUNT, nonce);
 
         vm.prank(user);
         signedVault.deposit(address(token), TOKEN_DEPOSIT_AMOUNT, resolver1, nonce);
@@ -304,7 +304,7 @@ contract SignedVaultTest is Test, DeployPermit2 {
 
         // Expect the Deposit event with nonce
         vm.expectEmit(true, true, true, true);
-        emit Deposit(user, address(token), amount, userNonce);
+        emit Deposit(user, address(token), resolver1, amount, userNonce);
 
         vm.prank(user);
         signedVault.depositWithPermit2(resolver1, permit, permitSignature, userNonce);

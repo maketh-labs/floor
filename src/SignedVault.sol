@@ -67,7 +67,7 @@ contract SignedVault is
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @notice Emitted when a user deposits funds
-    event Deposit(address user, address token, uint256 amount, uint256 nonce);
+    event Deposit(address user, address token, address resolver, uint256 amount, uint256 nonce);
 
     /// @notice Emitted when a user withdraws funds
     event Withdraw(address user, address token, uint256 amount);
@@ -133,7 +133,7 @@ contract SignedVault is
             resolverBalanceOf[resolver][ETH_ADDRESS] += msg.value;
         }
 
-        emit Deposit(msg.sender, ETH_ADDRESS, msg.value, nonce);
+        emit Deposit(msg.sender, ETH_ADDRESS, resolver, msg.value, nonce);
     }
 
     /**
@@ -160,7 +160,7 @@ contract SignedVault is
         _deposits[depositHash] = amount;
 
         resolverBalanceOf[resolver][token] += amount;
-        emit Deposit(msg.sender, token, amount, nonce);
+        emit Deposit(msg.sender, token, resolver, amount, nonce);
     }
 
     /**
@@ -200,7 +200,7 @@ contract SignedVault is
         _deposits[depositHash] = amount;
 
         resolverBalanceOf[resolver][token] += amount;
-        emit Deposit(msg.sender, token, amount, nonce);
+        emit Deposit(msg.sender, token, resolver, amount, nonce);
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
