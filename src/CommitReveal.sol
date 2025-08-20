@@ -9,6 +9,7 @@ import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/acces
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import {MulticallUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/MulticallUpgradeable.sol";
 import {ISignatureTransfer} from "permit2/src/interfaces/ISignatureTransfer.sol";
 
 /**
@@ -28,7 +29,8 @@ contract CommitReveal is
     ReentrancyGuardUpgradeable,
     EIP712Upgradeable,
     UUPSUpgradeable,
-    Ownable2StepUpgradeable
+    Ownable2StepUpgradeable,
+    MulticallUpgradeable
 {
     using SafeERC20 for IERC20;
 
@@ -176,6 +178,7 @@ contract CommitReveal is
         __ReentrancyGuard_init();
         __EIP712_init("CommitReveal", "1");
         __UUPSUpgradeable_init();
+        __Multicall_init();
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
