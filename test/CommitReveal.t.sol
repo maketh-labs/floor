@@ -647,10 +647,11 @@ contract CommitRevealTest is Test, DeployPermit2 {
         commitReveal.createGame(params, signature, SALT);
     }
 
-    function testDepositInvalidAmount() public {
+    function testDepositZeroAmountAllowed() public {
+        // Zero-amount deposits are permitted no-ops (the InvalidAmount guard was removed)
         vm.prank(resolver);
-        vm.expectRevert(abi.encodeWithSelector(CommitReveal.InvalidAmount.selector, 0));
         commitReveal.deposit(address(token), 0);
+        assertEq(commitReveal.balanceOf(resolver, address(token)), 0);
     }
 
     function testDepositInvalidAsset() public {

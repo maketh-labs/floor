@@ -295,7 +295,6 @@ contract CommitReveal is
         if (game.status != GameStatus.Active) {
             revert GameNotActive(gameId);
         }
-        if (payoutAmount == 0) revert InvalidAmount(payoutAmount);
 
         // Verify authorization - resolver can resolve directly, others need resolver signature
         if (msg.sender != game.resolver) {
@@ -385,7 +384,6 @@ contract CommitReveal is
      * @notice Deposit ETH as a resolver to provide liquidity for games
      */
     function depositETH() external payable nonReentrant {
-        if (msg.value == 0) revert InvalidAmount(msg.value);
         unchecked {
             balanceOf[msg.sender][ETH_ADDRESS] += msg.value;
         }
@@ -399,7 +397,6 @@ contract CommitReveal is
      */
     function deposit(address token, uint256 amount) external nonReentrant {
         if (token == ETH_ADDRESS) revert InvalidAsset();
-        if (amount == 0) revert InvalidAmount(amount);
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
         balanceOf[msg.sender][token] += amount;
         emit Deposit(msg.sender, token, amount);
@@ -418,7 +415,6 @@ contract CommitReveal is
         uint256 amount = permit.permitted.amount;
 
         if (token == ETH_ADDRESS) revert InvalidAsset();
-        if (amount == 0) revert InvalidAmount(amount);
 
         // Create transfer details - use full permitted amount
         ISignatureTransfer.SignatureTransferDetails memory transferDetails =
@@ -437,7 +433,6 @@ contract CommitReveal is
      * @param amount The amount to withdraw
      */
     function withdrawETH(uint256 amount) external nonReentrant {
-        if (amount == 0) revert InvalidAmount(amount);
         if (amount > balanceOf[msg.sender][ETH_ADDRESS]) {
             revert InsufficientContractBalance(ETH_ADDRESS, amount, balanceOf[msg.sender][ETH_ADDRESS]);
         }
@@ -459,7 +454,6 @@ contract CommitReveal is
      */
     function withdraw(address token, uint256 amount) external nonReentrant {
         if (token == ETH_ADDRESS) revert InvalidAsset();
-        if (amount == 0) revert InvalidAmount(amount);
         if (amount > balanceOf[msg.sender][token]) {
             revert InsufficientContractBalance(token, amount, balanceOf[msg.sender][token]);
         }

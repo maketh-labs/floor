@@ -270,18 +270,20 @@ contract SignedVaultTest is Test, DeployPermit2 {
         signedVault.deposit(address(token), TOKEN_DEPOSIT_AMOUNT, resolver1, nonce);
     }
 
-    function testDepositETHZeroAmount() public {
+    function testDepositETHZeroAmountAllowed() public {
+        // Zero-amount deposits are permitted no-ops (the InvalidAmount guard was removed)
         uint256 nonce = 1;
         vm.prank(user);
-        vm.expectRevert(abi.encodeWithSelector(SignedVault.InvalidAmount.selector, 0));
         signedVault.depositETH{value: 0}(resolver1, nonce);
+        assertEq(signedVault.resolverBalanceOf(resolver1, address(0)), 0);
     }
 
-    function testDepositERC20ZeroAmount() public {
+    function testDepositERC20ZeroAmountAllowed() public {
+        // Zero-amount deposits are permitted no-ops (the InvalidAmount guard was removed)
         uint256 nonce = 1;
         vm.prank(user);
-        vm.expectRevert(abi.encodeWithSelector(SignedVault.InvalidAmount.selector, 0));
         signedVault.deposit(address(token), 0, resolver1, nonce);
+        assertEq(signedVault.resolverBalanceOf(resolver1, address(token)), 0);
     }
 
     // ============ PERMIT2 DEPOSIT TESTS ============
@@ -393,8 +395,8 @@ contract SignedVaultTest is Test, DeployPermit2 {
             createPermit2Signature(address(token), amount, nonce, deadline, address(signedVault));
 
         vm.prank(user);
-        vm.expectRevert(abi.encodeWithSelector(SignedVault.InvalidAmount.selector, 0));
         signedVault.depositWithPermit2(resolver1, permit, permitSignature, userNonce);
+        assertEq(signedVault.resolverBalanceOf(resolver1, address(token)), 0);
     }
 
     // ============ WITHDRAWAL TESTS ============
@@ -525,7 +527,9 @@ contract SignedVaultTest is Test, DeployPermit2 {
         signedVault.withdrawETH(user, withdrawAmount, resolver1, nonce, deadline, wrongSignature);
     }
 
-    function testWithdrawZeroAmount() public {
+    function testWithdrawZeroAmountAllowed() public {
+        // Zero-amount withdrawals are permitted no-ops (the InvalidAmount guard was removed);
+        // they still require a valid resolver signature and consume the nonce.
         createBasicETHDeposit(user, resolver1, DEPOSIT_AMOUNT, 1);
 
         uint256 nonce = 1;
@@ -534,8 +538,10 @@ contract SignedVaultTest is Test, DeployPermit2 {
             createWithdrawSignature(user, address(0), 0, resolver1, resolver1PrivateKey, nonce, deadline);
 
         vm.prank(user);
-        vm.expectRevert(abi.encodeWithSelector(SignedVault.InvalidAmount.selector, 0));
         signedVault.withdrawETH(user, 0, resolver1, nonce, deadline, signature);
+
+        assertEq(signedVault.resolverBalanceOf(resolver1, address(0)), DEPOSIT_AMOUNT);
+        assertTrue(signedVault.usedNonces(resolver1, nonce));
     }
 
     // ============ RESOLVER TESTS ============
